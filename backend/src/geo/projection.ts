@@ -1,3 +1,4 @@
+// backend/src/geo/projection.ts
 import { LayerName } from "../types";
 
 export const R = 6378137;

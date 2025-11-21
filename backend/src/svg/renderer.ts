@@ -95,15 +95,14 @@ export function generateSvgForLayer(
     }
 
     svgParts.push(`</g>`);
-    svgParts.push(
-      `<text x="10" y="${height - 10}" font-size="12" fill="#777">© OpenStreetMap contributors</text>`
-    );
     svgParts.push("</svg>");
     return svgParts.join("\n");
   }
 
-  // WATER: handle multipolygons with inner rings (islands)
-  if (layerName === "water") {
+  // WATER + LAND: multipolygons with holes (evenodd)
+  if (layerName === "water" || layerName === "land") {
+    const fillColor = layerName === "water" ? "#b3d9ff" : "#f5f3ef";
+
     const grouped = new Map<string, ProjectedFeature[]>();
     const ungrouped: ProjectedFeature[] = [];
 
@@ -137,7 +136,7 @@ export function generateSvgForLayer(
       return d;
     };
 
-    // Multipolygon groups: outer + inner, fill-rule=evenodd
+    // Relation-based multipolygons: outers + inners
     for (const [, feats] of grouped) {
       const outers = feats.filter(f => f.role !== "inner");
       const inners = feats.filter(f => f.role === "inner");
@@ -153,28 +152,25 @@ export function generateSvgForLayer(
       }
 
       svgParts.push(
-        `<path d="${d.trim()}" fill="#b3d9ff" stroke="none" stroke-width="0" fill-rule="evenodd" />`
+        `<path d="${d.trim()}" fill="${fillColor}" stroke="none" stroke-width="0" fill-rule="evenodd" />`
       );
     }
 
-    // Ungrouped standalone water polygons
+    // Ungrouped standalone polygons
     for (const feat of ungrouped) {
       if (feat.coords.length < 3) continue;
       let d = buildPathForCoords(feat.coords);
       svgParts.push(
-        `<path d="${d.trim()}" fill="#b3d9ff" stroke="none" stroke-width="0" />`
+        `<path d="${d.trim()}" fill="${fillColor}" stroke="none" stroke-width="0" />`
       );
     }
 
     svgParts.push(`</g>`);
-    svgParts.push(
-      `<text x="10" y="${height - 10}" font-size="12" fill="#777">© OpenStreetMap contributors</text>`
-    );
     svgParts.push("</svg>");
     return svgParts.join("\n");
   }
 
-  // All other layers
+  // All other layers: standard path rendering
   for (const feat of features) {
     const coords = feat.coords;
     if (coords.length < 2) continue;
@@ -186,6 +182,28 @@ export function generateSvgForLayer(
       const [sx, sy] = mercatorToSvg(mx, my, minx, maxx, miny, maxy, width, height);
       d += `${i === 0 ? "M" : "L"}${sx.toFixed(2)},${sy.toFixed(2)} `;
     });
+
+    // Special styling for railways: solid base + dotted overlay
+    if (layerName === "railways") {
+      const baseWidth = defaultStrokeWidth("railways", canvas);
+      const dotWidth = baseWidth * 2;
+      const gap = baseWidth * 3;
+
+      // base solid stroke
+      svgParts.push(
+        `<path d="${d.trim()}" stroke="#000" stroke-width="${baseWidth}" fill="none" />`
+      );
+
+      // dotted overlay
+      svgParts.push(
+        `<path d="${d.trim()}" stroke="#000" stroke-width="${dotWidth}" fill="none" stroke-linecap="round" stroke-dasharray="0,${gap.toFixed(
+          2
+        )}" />`
+      );
+
+      // skip generic rendering
+      continue;
+    }
 
     let stroke = "#000";
     let strokeWidth: number;
@@ -202,11 +220,6 @@ export function generateSvgForLayer(
       stroke = "none";
       strokeWidth = 0;
       d += "Z";
-    } else if (layerName === "land" && closed) {
-      fill = "#f5f3ef";
-      stroke = "none";
-      strokeWidth = 0;
-      d += "Z";
     } else if (layerName === "parks" && closed) {
       fill = "#cdeac0";
       stroke = "none";
@@ -220,9 +233,6 @@ export function generateSvgForLayer(
   }
 
   svgParts.push(`</g>`);
-  svgParts.push(
-    `<text x="10" y="${height - 10}" font-size="12" fill="#777">© OpenStreetMap contributors</text>`
-  );
   svgParts.push("</svg>");
   return svgParts.join("\n");
 }

@@ -1,84 +1,164 @@
-import React, { useState } from "react";
-import { MapView } from "./components/MapView";
+// frontend/src/App.tsx
+import React, { useState, useEffect } from "react";
+import { MapView, type ExportRegionInfo } from "./components/MapView";
 import { LayerSelector } from "./components/LayerSelector";
-import type { BBox, LayerConfig, MapExportRequest, LayerName } from "./types";
+import type {
+  BBox,
+  LayerConfig,
+  LayerName,
+  MapExportRequest,
+} from "./types";
 import { exportZip } from "./api";
+import TutorialModal, {
+  getDontShowTutorialFlag,
+  setDontShowTutorialFlag,
+} from "./components/TutorialModal";
 
 const INITIAL_LAYERS: LayerConfig[] = [
-  { name: "land",      visible: true },
-  { name: "water",     visible: true },
-  { name: "parks",     visible: true },
-  { name: "roads",     visible: true },
-  { name: "railways",  visible: false },
-  { name: "buildings", visible: true },
-  { name: "labels",    visible: false },
+  { name: "land", visible: true },
+  { name: "water", visible: true },
+  { name: "parks", visible: true },
+  { name: "roads", visible: true },
+  { name: "railways", visible: true },
+  { name: "buildings", visible: false },
+  { name: "labels", visible: false },
 ];
 
-// Must stay in sync (numerically) with backend extent limit
-const EXTENT_MAX_DEG = 2.5;
+const KM_TO_MILES = 0.621371;
+const KM2_TO_MI2 = 0.386102;
+const EARTH_RADIUS_KM = 6371;
+const EXTENT_MAX_DEG = 13;
 
-function computeExtentStats(bbox: BBox) {
-  const latSpan = Math.abs(bbox.maxLat - bbox.minLat);
-  const lonSpan = Math.abs(bbox.maxLon - bbox.minLon);
+// Simple haversine distance in km between two lat/lon points
+function haversineKm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return EARTH_RADIUS_KM * c;
+}
 
-  const latMid = (bbox.maxLat + bbox.minLat) / 2;
+// Rebuild an ExportRegionInfo from a BBox so paste works even in a fresh session
+// Rebuild an ExportRegionInfo from a BBox so paste works even in a fresh session
+function buildExportRegionFromBBox(bbox: BBox): ExportRegionInfo {
+  const { minLat, minLon, maxLat, maxLon } = bbox;
+
+  const widthKm = haversineKm(minLat, minLon, minLat, maxLon);
+  const heightKm = haversineKm(minLat, minLon, maxLat, minLon);
+  const areaKm2 = widthKm * heightKm;
+
+  const latSpan = Math.abs(maxLat - minLat);
+  const lonSpan = Math.abs(maxLon - minLon);
+  const latMid = (maxLat + minLat) / 2;
   const latMidRad = (latMid * Math.PI) / 180;
-
-  const kmPerDegLat = 111.32;
-  const kmPerDegLon = Math.cos(latMidRad) * 111.32;
-
-  const widthKm = Math.max(0, lonSpan * kmPerDegLon);
-  const heightKm = Math.max(0, latSpan * kmPerDegLat);
-
   const normalizedSpanDeg = Math.max(
     latSpan,
     Math.abs(lonSpan * Math.cos(latMidRad))
   );
 
-  const tooLarge = normalizedSpanDeg > EXTENT_MAX_DEG;
+  let detailLevel: "fine" | "medium" | "coarse";
+  if (normalizedSpanDeg <= 0.2) {
+    detailLevel = "fine";
+  } else if (normalizedSpanDeg <= 0.8) {
+    detailLevel = "medium";
+  } else {
+    detailLevel = "coarse";
+  }
 
-  const centerLat = (bbox.minLat + bbox.maxLat) / 2;
-  const centerLon = (bbox.minLon + bbox.maxLon) / 2;
+  const isTooBig = normalizedSpanDeg > EXTENT_MAX_DEG;
 
   return {
+    bbox,
     widthKm,
     heightKm,
-    centerLat,
-    centerLon,
-    tooLarge,
+    areaKm2,
+    normalizedSpanDeg,
+    detailLevel,
+    isTooBig,
   };
 }
 
+
+function flashState(
+    setter: React.Dispatch<React.SetStateAction<"idle" | "success" | "error">>,
+    value: "success" | "error",
+    duration = 1400
+  ) {
+    setter(value);
+    window.setTimeout(() => setter("idle"), duration);
+  }
+
 const App: React.FC = () => {
-  const [bbox, setBbox] = useState<BBox | null>(null);
   const [layers, setLayers] = useState<LayerConfig[]>(INITIAL_LAYERS);
+  const [exportRegion, setExportRegion] = useState<ExportRegionInfo | null>(
+    null
+  );
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchToken, setSearchToken] = useState(0);
+
+  // For programmatic rectangle updates (paste area)
+  const [externalBBox, setExternalBBox] = useState<BBox | null>(null);
+  const [externalBBoxToken, setExternalBBoxToken] = useState(0);
+
+  const [copyState, setCopyState] = useState<"idle" | "success" | "error">("idle");
+  const [pasteState, setPasteState] = useState<"idle" | "success" | "error">("idle");
+
+  const copyLabel =
+  copyState === "success"
+    ? "Copied!"
+    : copyState === "error"
+    ? "Copy failed"
+    : "Copy area";
+
+const pasteLabel =
+  pasteState === "success"
+    ? "Pasted!"
+    : pasteState === "error"
+    ? "Paste failed"
+    : "Paste area";
+
+  useEffect(() => {
+    if (!getDontShowTutorialFlag()) {
+      setShowTutorial(true);
+    }
+  }, []);
+
+  const visibleLayerNames: LayerName[] = layers
+    .filter((l) => l.visible)
+    .map((l) => l.name);
 
   const handleExport = async () => {
     setError(null);
-    if (!bbox) {
-      setError("Map area not ready yet. Try moving/zooming the map.");
+    if (!exportRegion) {
+      setError("Export area not ready yet.");
       return;
     }
-
-    const stats = computeExtentStats(bbox);
-    if (stats.tooLarge) {
-      setError("Selected area is too large. Zoom in for more detail.");
-      return;
-    }
-
-    const visibleLayerNames: LayerName[] = layers
-      .filter(l => l.visible)
-      .map(l => l.name);
-
     if (visibleLayerNames.length === 0) {
       setError("Select at least one layer to export.");
       return;
     }
+    if (exportRegion.isTooBig) {
+      setError("Export area is too large. Please shrink the rectangle.");
+      return;
+    }
 
     const payload: MapExportRequest = {
-      bbox,
+      bbox: exportRegion.bbox,
       layers: visibleLayerNames,
     };
 
@@ -95,25 +175,148 @@ const App: React.FC = () => {
       URL.revokeObjectURL(url);
     } catch (e: any) {
       console.error(e);
-      setError(e?.response?.data?.message || e?.message || "Export failed");
+      setError(e?.message || "Export failed");
     } finally {
       setIsExporting(false);
     }
   };
 
   const toggleAll = (visible: boolean) => {
-    setLayers(prev => prev.map(l => ({ ...l, visible })));
+    setLayers((prev) => prev.map((l) => ({ ...l, visible })));
   };
 
-  const visibleLayerNames: LayerName[] = layers
-    .filter(l => l.visible)
-    .map(l => l.name);
+  const onSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchTerm.trim()) return;
+    setSearchToken((t) => t + 1);
+  };
 
-  const extent = bbox ? computeExtentStats(bbox) : null;
-  const extentTooLarge = extent?.tooLarge ?? false;
+  const handleCopyArea = async () => {
+    setError(null);
+    setCopyState("idle");
 
-  const exportDisabled =
-    isExporting || !bbox || visibleLayerNames.length === 0 || extentTooLarge;
+    if (!exportRegion) {
+      setError("Export area not ready yet.");
+      setCopyState("error");
+      flashState(setCopyState, "error");
+      return;
+    }
+
+    const text = JSON.stringify(exportRegion.bbox);
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+
+      flashState(setCopyState, "success");
+    } catch (err) {
+      console.error(err);
+      setError("Failed to copy area to clipboard.");
+      flashState(setCopyState, "error");
+    }
+  };
+
+
+  const handlePasteArea = async () => {
+    setError(null);
+    setPasteState("idle");
+
+    try {
+      let text: string;
+
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        text = await navigator.clipboard.readText();
+      } else {
+        const manual = window.prompt("Paste area string here:");
+        if (!manual) return;
+        text = manual;
+      }
+
+      text = text.trim();
+      if (!text) return;
+
+      let bbox: BBox | null = null;
+
+      // Try JSON first
+      try {
+        const parsed = JSON.parse(text);
+        if (
+          parsed &&
+          typeof parsed.minLat === "number" &&
+          typeof parsed.minLon === "number" &&
+          typeof parsed.maxLat === "number" &&
+          typeof parsed.maxLon === "number"
+        ) {
+          bbox = {
+            minLat: parsed.minLat,
+            minLon: parsed.minLon,
+            maxLat: parsed.maxLat,
+            maxLon: parsed.maxLon,
+          };
+        }
+      } catch {
+        // Ignore JSON error, fall back to CSV-style
+      }
+
+      if (!bbox) {
+        const parts = text.split(/[,\s]+/).filter(Boolean);
+        if (parts.length < 4) {
+          throw new Error("Clipboard text is not a valid area format.");
+        }
+        const [minLatStr, minLonStr, maxLatStr, maxLonStr] = parts;
+        const minLat = parseFloat(minLatStr);
+        const minLon = parseFloat(minLonStr);
+        const maxLat = parseFloat(maxLatStr);
+        const maxLon = parseFloat(maxLonStr);
+        if ([minLat, minLon, maxLat, maxLon].some((v) => Number.isNaN(v))) {
+          throw new Error("Clipboard text contains invalid numbers.");
+        }
+        bbox = { minLat, minLon, maxLat, maxLon };
+      }
+
+      const region = buildExportRegionFromBBox(bbox);
+      setExportRegion(region);
+
+      setExternalBBox(bbox);
+      setExternalBBoxToken((t) => t + 1);
+
+      flashState(setPasteState, "success");
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message || "Failed to paste area from clipboard.");
+      flashState(setPasteState, "error");
+    }
+  };
+
+
+  const disabled =
+    isExporting ||
+    !exportRegion ||
+    visibleLayerNames.length === 0 ||
+    exportRegion.isTooBig;
+
+  const widthMiles = exportRegion ? exportRegion.widthKm * KM_TO_MILES : null;
+  const heightMiles = exportRegion ? exportRegion.heightKm * KM_TO_MILES : null;
+  const areaMiles2 = exportRegion ? exportRegion.areaKm2 * KM2_TO_MI2 : null;
+
+  const detailLevelLabel =
+  exportRegion?.detailLevel === "fine"
+    ? "Fine"
+    : exportRegion?.detailLevel === "medium"
+    ? "Medium"
+    : exportRegion?.detailLevel === "coarse"
+    ? "Coarse"
+    : null;
 
   return (
     <div
@@ -125,6 +328,16 @@ const App: React.FC = () => {
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
       }}
     >
+      <TutorialModal
+        open={showTutorial}
+        onClose={() => setShowTutorial(false)}
+        onDontShowAgain={() => {
+          setDontShowTutorialFlag();
+          setShowTutorial(false);
+        }}
+      />
+
+      {/* Map layer */}
       <div
         style={{
           position: "absolute",
@@ -132,18 +345,25 @@ const App: React.FC = () => {
           zIndex: 1,
         }}
       >
-        <MapView onBoundsChange={setBbox} />
+        <MapView
+          onExportRegionChange={setExportRegion}
+          searchTerm={searchTerm}
+          searchToken={searchToken}
+          externalBBox={externalBBox}
+          externalBBoxToken={externalBBoxToken}
+        />
       </div>
 
+      {/* Control panel */}
       <div
         style={{
           position: "absolute",
           top: 16,
           left: 16,
-          maxWidth: 360,
+          maxWidth: 380,
           padding: 16,
           borderRadius: 10,
-          background: "rgba(15,15,15,0.85)",
+          background: "rgba(15,15,15,0.9)",
           color: "#f5f5f5",
           boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
           backdropFilter: "blur(6px)",
@@ -157,95 +377,218 @@ const App: React.FC = () => {
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
           <div>
             <h1 style={{ fontSize: 20, margin: 0 }}>ClipMap</h1>
-            <p style={{ fontSize: 12, color: "#bbbbbb", marginTop: 4 }}>
-              Pan &amp; zoom to frame your artwork. Visible area = export region.
-            </p>
           </div>
-        </div>
-
-        <section>
-          <h2 style={{ fontSize: 14, marginBottom: 6 }}>Layers</h2>
-          <div>
-            <LayerSelector layers={layers} onChange={setLayers} />
-
-            <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
-              <button
-                type="button"
-                onClick={() => toggleAll(true)}
-                style={{
-                  fontSize: 11,
-                  padding: "3px 8px",
-                  borderRadius: 999,
-                  border: "1px solid #444",
-                  background: "#222",
-                  color: "#eee",
-                  cursor: "pointer",
-                }}
-              >
-                Show all
-              </button>
-              <button
-                type="button"
-                onClick={() => toggleAll(false)}
-                style={{
-                  fontSize: 11,
-                  padding: "3px 8px",
-                  borderRadius: 999,
-                  border: "1px solid #444",
-                  background: "#222",
-                  color: "#eee",
-                  cursor: "pointer",
-                }}
-              >
-                Hide all
-              </button>
-            </div>
-          </div>
-
-          <div
+          <button
+            type="button"
+            onClick={() => setShowTutorial(true)}
             style={{
-              marginTop: 10,
               fontSize: 11,
-              color: extentTooLarge ? "#ff8a80" : "#cccccc",
+              padding: "4px 8px",
+              borderRadius: 4,
+              border: "1px solid #555",
+              background: "#1b1b1b",
+              color: "#ddd",
+              cursor: "pointer",
+              height: "fit-content",
             }}
           >
-            <div>
-              <strong>Current area</strong>
-              {extentTooLarge && (
-                <span style={{ marginLeft: 6 }}>
-                  – too large, zoom in for better detail
-                </span>
-              )}
-            </div>
-            {bbox && extent ? (
-              <>
-                <div>
-                  Center: {extent.centerLat.toFixed(4)},{" "}
-                  {extent.centerLon.toFixed(4)}
-                </div>
-                <div>Approx width: {extent.widthKm.toFixed(1)} km</div>
-                <div>Approx height: {extent.heightKm.toFixed(1)} km</div>
-              </>
-            ) : (
-              <div>Move the map to initialize…</div>
-            )}
+            How it works
+          </button>
+        </div>
+
+        {/* Search */}
+        <form onSubmit={onSearchSubmit} style={{ display: "flex", gap: 6 }}>
+          <input
+            type="text"
+            placeholder="Search place (city, address...)"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{
+              flex: 1,
+              fontSize: 12,
+              padding: "6px 8px",
+              borderRadius: 6,
+              border: "1px solid #444",
+              background: "#111",
+              color: "#f5f5f5",
+            }}
+          />
+          <button
+            type="submit"
+            style={{
+              fontSize: 12,
+              padding: "6px 10px",
+              borderRadius: 6,
+              border: "none",
+              background: "#f5f5f5",
+              color: "#111",
+              cursor: "pointer",
+            }}
+          >
+            Go
+          </button>
+        </form>
+
+        {/* Layers */}
+        <section>
+          <h2 style={{ fontSize: 14, marginBottom: 6 }}>Layers</h2>
+          <LayerSelector layers={layers} onChange={setLayers} />
+          <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
+            <button
+              type="button"
+              onClick={() => toggleAll(true)}
+              style={{
+                fontSize: 11,
+                padding: "3px 8px",
+                borderRadius: 999,
+                border: "1px solid #444",
+                background: "#222",
+                color: "#eee",
+                cursor: "pointer",
+              }}
+            >
+              Show all
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleAll(false)}
+              style={{
+                fontSize: 11,
+                padding: "3px 8px",
+                borderRadius: 999,
+                border: "1px solid #444",
+                background: "#222",
+                color: "#eee",
+                cursor: "pointer",
+              }}
+            >
+              Hide all
+            </button>
           </div>
         </section>
 
+        {/* Export area info */}
+        <section style={{ fontSize: 11, color: "#cccccc" }}>
+          <h2 style={{ fontSize: 14, marginBottom: 6 }}>Export Area</h2>
+          {exportRegion ? (
+            <>
+              <div
+                style={{
+                  color: exportRegion.isTooBig ? "#ff8a80" : "#b2ffb2",
+                  marginBottom: 2,
+                }}
+              >
+                {widthMiles && heightMiles && areaMiles2 && (
+                  <>
+                    {widthMiles.toFixed(1)} × {heightMiles.toFixed(1)} miles (
+                    {areaMiles2.toFixed(1)} sq mi)
+                  </>
+                )}
+                {exportRegion.isTooBig && " — too large (shrink the box)"}
+              </div>
+
+              {detailLevelLabel && (
+                <div style={{ marginBottom: 2 }}>
+                  Detail level:{" "}
+                  <span style={{ fontWeight: 600 }}>{detailLevelLabel}</span>
+                  {typeof exportRegion.normalizedSpanDeg === "number" && (
+                    <> ({exportRegion.normalizedSpanDeg.toFixed(1)}° span)</>
+                  )}
+                </div>
+              )}
+
+              <div>
+                South: {exportRegion.bbox.minLat.toFixed(5)}, West:{" "}
+                {exportRegion.bbox.minLon.toFixed(5)}
+              </div>
+
+              <div>
+                North: {exportRegion.bbox.maxLat.toFixed(5)}, East:{" "}
+                {exportRegion.bbox.maxLon.toFixed(5)}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 6,
+                  display: "flex",
+                  gap: 6,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={handleCopyArea}
+                  style={{
+                    fontSize: 11,
+                    padding: "3px 8px",
+                    borderRadius: 999,
+                    border:
+                      copyState === "success"
+                        ? "1px solid #4caf50"
+                        : copyState === "error"
+                        ? "1px solid #f44336"
+                        : "1px solid #444",
+                    background:
+                      copyState === "success"
+                        ? "#224422"
+                        : copyState === "error"
+                        ? "#441818"
+                        : "#222",
+                    color: "#eee",
+                    cursor: "pointer",
+                    transition: "background 120ms ease, border-color 120ms ease",
+                  }}
+                >
+                  {copyLabel}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePasteArea}
+                  style={{
+                    fontSize: 11,
+                    padding: "3px 8px",
+                    borderRadius: 999,
+                    border:
+                      pasteState === "success"
+                        ? "1px solid #4caf50"
+                        : pasteState === "error"
+                        ? "1px solid #f44336"
+                        : "1px solid #444",
+                    background:
+                      pasteState === "success"
+                        ? "#224422"
+                        : pasteState === "error"
+                        ? "#441818"
+                        : "#222",
+                    color: "#eee",
+                    cursor: "pointer",
+                    transition: "background 120ms ease, border-color 120ms ease",
+                  }}
+                >
+                  {pasteLabel}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div>Move the map a bit to initialize…</div>
+          )}
+        </section>
+
+        {/* Export */}
         <section>
           <button
             type="button"
             onClick={handleExport}
-            disabled={exportDisabled}
+            disabled={disabled}
             style={{
               padding: "8px 12px",
               fontSize: 13,
               fontWeight: 600,
-              background: exportDisabled ? "#444" : "#f5f5f5",
-              color: exportDisabled ? "#999" : "#111",
+              background: disabled ? "#444" : "#f5f5f5",
+              color: disabled ? "#999" : "#111",
               borderRadius: 6,
               border: "none",
-              cursor: exportDisabled ? "not-allowed" : "pointer",
+              cursor: disabled ? "not-allowed" : "pointer",
               width: "100%",
             }}
           >
@@ -262,9 +605,54 @@ const App: React.FC = () => {
           )}
         </section>
 
-        <div style={{ fontSize: 10, color: "#aaaaaa", marginTop: 4 }}>
-          SVGs are designed to be edited in Figma, Illustrator, Photoshop, or
-          Canva (recolor, clip, mask).
+        {/* Support / Links */}
+        <div
+          style={{
+            marginTop: 10,
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            flexWrap: "wrap",
+            fontSize: 11,
+          }}
+        >
+          <a
+            href="https://www.buymeacoffee.com/boehnen"
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid #ffdd99",
+              background: "#2b1a00",
+              color: "#ffdd99",
+              textDecoration: "none",
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+            }}
+          >
+            ☕ Buy me a coffee
+          </a>
+
+          <a
+            href="https://github.com/boehnen"
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid #444",
+              background: "#1b1b1b",
+              color: "#e0e0e0",
+              textDecoration: "none",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Created by Justin Boehnen
+          </a>
         </div>
       </div>
     </div>

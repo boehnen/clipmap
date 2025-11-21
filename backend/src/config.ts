@@ -1,3 +1,4 @@
+// backend/src/config.ts
 export const CONFIG = {
   port: Number(process.env.PORT || 4000),
 

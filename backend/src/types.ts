@@ -1,3 +1,4 @@
+// backend/src/types.ts
 export type LayerName =
   | "roads"
   | "railways"
@@ -6,6 +7,8 @@ export type LayerName =
   | "land"
   | "parks"
   | "labels";
+
+export type DetailLevel = "fine" | "medium" | "coarse";
 
 export interface BBox {
   minLat: number;

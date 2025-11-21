@@ -1,3 +1,4 @@
+// backend/src/middleware/errorHandler.ts
 import { Request, Response, NextFunction } from "express";
 import { logger } from "../logger";
 import { metrics } from "../metrics";

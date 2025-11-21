@@ -1,5 +1,6 @@
+// backend/src/osm/layers.ts
 import { LayerName, RawWay } from "../types";
-import { buildOverpassQuery, runOverpassQuery } from "./overpass";
+import { buildOverpassQuery, runOverpassQuery, computeDetailLevel } from "./overpass";
 
 export async function fetchOsmLayer(
   bbox: [number, number, number, number],
@@ -9,9 +10,16 @@ export async function fetchOsmLayer(
     throw new Error("fetchOsmLayer is for non-water layers only");
   }
 
+  const detail = computeDetailLevel(bbox);
+
+  // For very large extents, buildings are both unreadable and too heavy.
+  if (layer === "buildings" && detail !== "fine") {
+    console.log("Skipping buildings layer for large extent");
+    return [];
+  }
+
   const query = buildOverpassQuery(bbox, layer);
   const data = await runOverpassQuery(query, layer);
-
   const nodes = new Map<number, [number, number]>();
   const ways: RawWay[] = [];
 

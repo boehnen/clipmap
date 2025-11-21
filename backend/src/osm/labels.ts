@@ -1,3 +1,4 @@
+// backend/src/osm/labels.ts
 import { RawWay } from "../types";
 import { buildOverpassQuery, runOverpassQuery } from "./overpass";
 

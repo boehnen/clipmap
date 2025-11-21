@@ -1,3 +1,4 @@
+// frontend/src/types.ts
 export type LayerName =
   | "land"
   | "water"
@@ -14,13 +15,14 @@ export interface BBox {
   maxLon: number;
 }
 
-// UI-only; backend never sees this
+// UI-only: what you keep in React state
 export interface LayerConfig {
   name: LayerName;
   visible: boolean;
 }
 
+// What you send to the backend
 export interface MapExportRequest {
   bbox: BBox;
-  layers: LayerName[];
+  layers: LayerName[];  // <-- just the included layers
 }
