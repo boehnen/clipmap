@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { MapView } from "./components/MapView";
 import { LayerSelector } from "./components/LayerSelector";
-import type { BBox, LayerConfig, MapExportRequest } from "./types";
+import type { BBox, LayerConfig, MapExportRequest, LayerName } from "./types";
 import { exportZip } from "./api";
 
 const INITIAL_LAYERS: LayerConfig[] = [
@@ -11,23 +11,76 @@ const INITIAL_LAYERS: LayerConfig[] = [
   { name: "roads",     visible: true },
   { name: "railways",  visible: false },
   { name: "buildings", visible: true },
+  { name: "labels",    visible: false },
 ];
+
+// Must stay in sync (numerically) with backend extent limit
+const EXTENT_MAX_DEG = 2.5;
+
+function computeExtentStats(bbox: BBox) {
+  const latSpan = Math.abs(bbox.maxLat - bbox.minLat);
+  const lonSpan = Math.abs(bbox.maxLon - bbox.minLon);
+
+  const latMid = (bbox.maxLat + bbox.minLat) / 2;
+  const latMidRad = (latMid * Math.PI) / 180;
+
+  const kmPerDegLat = 111.32;
+  const kmPerDegLon = Math.cos(latMidRad) * 111.32;
+
+  const widthKm = Math.max(0, lonSpan * kmPerDegLon);
+  const heightKm = Math.max(0, latSpan * kmPerDegLat);
+
+  const normalizedSpanDeg = Math.max(
+    latSpan,
+    Math.abs(lonSpan * Math.cos(latMidRad))
+  );
+
+  const tooLarge = normalizedSpanDeg > EXTENT_MAX_DEG;
+
+  const centerLat = (bbox.minLat + bbox.maxLat) / 2;
+  const centerLon = (bbox.minLon + bbox.maxLon) / 2;
+
+  return {
+    widthKm,
+    heightKm,
+    centerLat,
+    centerLon,
+    tooLarge,
+  };
+}
 
 const App: React.FC = () => {
   const [bbox, setBbox] = useState<BBox | null>(null);
   const [layers, setLayers] = useState<LayerConfig[]>(INITIAL_LAYERS);
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const handleExport = async () => {
     setError(null);
     if (!bbox) {
-      setError("Map bounds not ready yet. Try moving/zooming the map.");
+      setError("Map area not ready yet. Try moving/zooming the map.");
       return;
     }
 
-    const payload: MapExportRequest = { bbox, layers };
+    const stats = computeExtentStats(bbox);
+    if (stats.tooLarge) {
+      setError("Selected area is too large. Zoom in for more detail.");
+      return;
+    }
+
+    const visibleLayerNames: LayerName[] = layers
+      .filter(l => l.visible)
+      .map(l => l.name);
+
+    if (visibleLayerNames.length === 0) {
+      setError("Select at least one layer to export.");
+      return;
+    }
+
+    const payload: MapExportRequest = {
+      bbox,
+      layers: visibleLayerNames,
+    };
 
     try {
       setIsExporting(true);
@@ -42,7 +95,7 @@ const App: React.FC = () => {
       URL.revokeObjectURL(url);
     } catch (e: any) {
       console.error(e);
-      setError(e?.message || "Export failed");
+      setError(e?.response?.data?.message || e?.message || "Export failed");
     } finally {
       setIsExporting(false);
     }
@@ -52,7 +105,15 @@ const App: React.FC = () => {
     setLayers(prev => prev.map(l => ({ ...l, visible })));
   };
 
-  const visibleLayerNames = layers.filter(l => l.visible).map(l => l.name);
+  const visibleLayerNames: LayerName[] = layers
+    .filter(l => l.visible)
+    .map(l => l.name);
+
+  const extent = bbox ? computeExtentStats(bbox) : null;
+  const extentTooLarge = extent?.tooLarge ?? false;
+
+  const exportDisabled =
+    isExporting || !bbox || visibleLayerNames.length === 0 || extentTooLarge;
 
   return (
     <div
@@ -64,7 +125,6 @@ const App: React.FC = () => {
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
       }}
     >
-      {/* Fullscreen map, explicitly behind controls */}
       <div
         style={{
           position: "absolute",
@@ -75,7 +135,6 @@ const App: React.FC = () => {
         <MapView onBoundsChange={setBbox} />
       </div>
 
-      {/* Floating control panel, above everything */}
       <div
         style={{
           position: "absolute",
@@ -92,25 +151,22 @@ const App: React.FC = () => {
           flexDirection: "column",
           gap: 10,
           fontSize: 13,
-          zIndex: 2000, // make sure we sit on top of Leaflet
+          zIndex: 2000,
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
           <div>
             <h1 style={{ fontSize: 20, margin: 0 }}>ClipMap</h1>
             <p style={{ fontSize: 12, color: "#bbbbbb", marginTop: 4 }}>
-              Pan &amp; zoom to frame your artwork. Visible area = export bbox.
+              Pan &amp; zoom to frame your artwork. Visible area = export region.
             </p>
           </div>
         </div>
 
         <section>
-          <h2 style={{ fontSize: 14, marginBottom: 6 }}>Basic</h2>
+          <h2 style={{ fontSize: 14, marginBottom: 6 }}>Layers</h2>
           <div>
-            <strong style={{ fontSize: 12 }}>Layers</strong>
-            <div style={{ marginTop: 4 }}>
-              <LayerSelector layers={layers} onChange={setLayers} />
-            </div>
+            <LayerSelector layers={layers} onChange={setLayers} />
 
             <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
               <button
@@ -146,20 +202,29 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div style={{ marginTop: 8, fontSize: 11, color: "#cccccc" }}>
+          <div
+            style={{
+              marginTop: 10,
+              fontSize: 11,
+              color: extentTooLarge ? "#ff8a80" : "#cccccc",
+            }}
+          >
             <div>
-              <strong>Current bbox</strong>
+              <strong>Current area</strong>
+              {extentTooLarge && (
+                <span style={{ marginLeft: 6 }}>
+                  – too large, zoom in for better detail
+                </span>
+              )}
             </div>
-            {bbox ? (
+            {bbox && extent ? (
               <>
                 <div>
-                  minLat: {bbox.minLat.toFixed(5)}, minLon:{" "}
-                  {bbox.minLon.toFixed(5)}
+                  Center: {extent.centerLat.toFixed(4)},{" "}
+                  {extent.centerLon.toFixed(4)}
                 </div>
-                <div>
-                  maxLat: {bbox.maxLat.toFixed(5)}, maxLon:{" "}
-                  {bbox.maxLon.toFixed(5)}
-                </div>
+                <div>Approx width: {extent.widthKm.toFixed(1)} km</div>
+                <div>Approx height: {extent.heightKm.toFixed(1)} km</div>
               </>
             ) : (
               <div>Move the map to initialize…</div>
@@ -171,25 +236,16 @@ const App: React.FC = () => {
           <button
             type="button"
             onClick={handleExport}
-            disabled={isExporting || !bbox || visibleLayerNames.length === 0}
+            disabled={exportDisabled}
             style={{
               padding: "8px 12px",
               fontSize: 13,
               fontWeight: 600,
-              background:
-                isExporting || !bbox || visibleLayerNames.length === 0
-                  ? "#444"
-                  : "#f5f5f5",
-              color:
-                isExporting || !bbox || visibleLayerNames.length === 0
-                  ? "#999"
-                  : "#111",
+              background: exportDisabled ? "#444" : "#f5f5f5",
+              color: exportDisabled ? "#999" : "#111",
               borderRadius: 6,
               border: "none",
-              cursor:
-                isExporting || !bbox || visibleLayerNames.length === 0
-                  ? "not-allowed"
-                  : "pointer",
+              cursor: exportDisabled ? "not-allowed" : "pointer",
               width: "100%",
             }}
           >
@@ -202,45 +258,6 @@ const App: React.FC = () => {
           {error && (
             <div style={{ color: "#ff8a80", fontSize: 11, marginTop: 6 }}>
               {error}
-            </div>
-          )}
-        </section>
-
-        <section>
-          <button
-            type="button"
-            onClick={() => setShowAdvanced(s => !s)}
-            style={{
-              fontSize: 11,
-              padding: "4px 8px",
-              borderRadius: 4,
-              border: "1px solid #555",
-              background: "#1b1b1b",
-              color: "#ddd",
-              cursor: "pointer",
-            }}
-          >
-            {showAdvanced ? "Hide advanced options" : "Show advanced options"}
-          </button>
-
-          {showAdvanced && (
-            <div
-              style={{
-                marginTop: 6,
-                padding: 8,
-                borderRadius: 4,
-                border: "1px dashed #555",
-                fontSize: 11,
-                color: "#cccccc",
-                background: "rgba(20,20,20,0.9)",
-              }}
-            >
-              <p style={{ marginTop: 0 }}>Ideas for later:</p>
-              <ul style={{ paddingLeft: 18, margin: 0 }}>
-                <li>Theme presets (mono, blueprint, dark).</li>
-                <li>Toggle attribution text.</li>
-                <li>Road weight presets for huge prints.</li>
-              </ul>
             </div>
           )}
         </section>

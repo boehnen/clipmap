@@ -93,6 +93,16 @@ export function buildOverpassQuery(
     `;
   }
 
+  if (layer === "labels") {
+    return `
+      [out:json][timeout:25];
+      (
+        node["place"]["name"](${minLat},${minLon},${maxLat},${maxLon});
+      );
+      out body;
+    `;
+  }
+
   let filterExpr = "";
   switch (layer) {
     case "roads":

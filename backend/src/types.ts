@@ -4,7 +4,8 @@ export type LayerName =
   | "water"
   | "buildings"
   | "land"
-  | "parks";
+  | "parks"
+  | "labels";
 
 export interface BBox {
   minLat: number;
@@ -20,15 +21,19 @@ export interface LayerConfig {
 
 export interface MapExportRequest {
   bbox: BBox;
-  layers: LayerConfig[];
+  layers: LayerName[];
 }
 
 export interface RawWay {
   coords: [number, number][];
   tags: Record<string, string>;
+  role?: "outer" | "inner";
+  relationId?: number;
 }
 
 export interface ProjectedFeature {
   coords: [number, number][];
   tags: Record<string, string>;
+  role?: "outer" | "inner";
+  relationId?: number;
 }

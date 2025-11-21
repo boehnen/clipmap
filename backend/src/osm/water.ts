@@ -119,38 +119,59 @@ export async function fetchWaterPolygons(
   const polygons: RawWay[] = [];
   const usedWayIds = new Set<number>();
 
+  // Multipolygons: treat outer and inner separately, with roles and relationId
   for (const rel of relations) {
     const tags: Record<string, string> = rel.tags || {};
     if (!isWaterArea(tags)) continue;
+
     const members = rel.members || [];
-    const outerMembers = members.filter(
-      (m: any) => m.type === "way" && m.role === "outer"
-    );
+    const outerSegments: [number, number][][] = [];
+    const innerSegments: [number, number][][] = [];
 
-    const segments: [number, number][][] = [];
-
-    for (const m of outerMembers) {
+    for (const m of members) {
+      if (m.type !== "way") continue;
       const nodeIds = wayNodes.get(m.ref);
       if (!nodeIds) continue;
+
       const coords: [number, number][] = [];
       for (const nid of nodeIds) {
         const n = nodes.get(nid);
         if (n) coords.push(n);
       }
-      if (coords.length >= 2) {
-        segments.push(coords);
-        usedWayIds.add(m.ref);
+      if (coords.length < 2) continue;
+
+      if (m.role === "inner") {
+        innerSegments.push(coords);
+      } else {
+        // treat missing role as outer by default
+        outerSegments.push(coords);
       }
+      usedWayIds.add(m.ref);
     }
 
-    if (segments.length === 0) continue;
+    const outerRings = buildRingsFromSegments(outerSegments);
+    const innerRings = buildRingsFromSegments(innerSegments);
 
-    const rings = buildRingsFromSegments(segments);
-    for (const ring of rings) {
-      polygons.push({ coords: ring, tags });
+    for (const ring of outerRings) {
+      polygons.push({
+        coords: ring,
+        tags,
+        role: "outer",
+        relationId: rel.id,
+      });
+    }
+
+    for (const ring of innerRings) {
+      polygons.push({
+        coords: ring,
+        tags,
+        role: "inner",
+        relationId: rel.id,
+      });
     }
   }
 
+  // Standalone ways that look like water areas
   for (const [wayId, nodeIds] of wayNodes) {
     if (usedWayIds.has(wayId)) continue;
     const tags = wayTags.get(wayId) || {};
@@ -167,6 +188,6 @@ export async function fetchWaterPolygons(
     polygons.push({ coords: closedCoords, tags });
   }
 
-  console.log(`Built ${polygons.length} water polygons`);
+  console.log(`Built ${polygons.length} water polygons (with relations)`);
   return polygons;
 }

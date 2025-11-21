@@ -1,25 +1,51 @@
 import express from "express";
 import JSZip from "jszip";
-import { MapExportRequest, RawWay, ProjectedFeature } from "../types";
+import { BBox, MapExportRequest, RawWay, ProjectedFeature, LayerName } from "../types";
 import { lonLatToWebMercator, autoCanvasFromMercator } from "../geo/projection";
 import { fetchOsmLayer } from "../osm/layers";
 import { fetchWaterPolygons } from "../osm/water";
 import { fetchParkPolygons } from "../osm/parks";
+import { fetchLabelFeatures } from "../osm/labels";
 import { generateSvgForLayer } from "../svg/renderer";
 import { logger } from "../logger";
 
 const router = express.Router();
+
+// Keep this numerically in sync with frontend EXTENT_MAX_DEG
+const EXTENT_MAX_DEG = 2.5;
+
+function isExtentTooLarge(bbox: BBox): boolean {
+  const latSpan = Math.abs(bbox.maxLat - bbox.minLat);
+  const lonSpan = Math.abs(bbox.maxLon - bbox.minLon);
+  const latMid = (bbox.maxLat + bbox.minLat) / 2;
+  const latMidRad = (latMid * Math.PI) / 180;
+
+  const normalizedSpanDeg = Math.max(
+    latSpan,
+    Math.abs(lonSpan * Math.cos(latMidRad))
+  );
+
+  return normalizedSpanDeg > EXTENT_MAX_DEG;
+}
 
 router.post("/export-zip", async (req, res, next) => {
   const body = req.body as MapExportRequest;
 
   logger.info("export_request_received", {
     bbox: body.bbox,
-    layers: body.layers.map(l => l.name),
+    layers: body.layers,
   });
 
   try {
     const { bbox, layers } = body;
+
+    if (isExtentTooLarge(bbox)) {
+      return res.status(400).json({
+        error: "Extent too large",
+        message: "Selected area is too large. Please zoom in and try again.",
+      });
+    }
+
     const { minLat, minLon, maxLat, maxLon } = bbox;
 
     const [minx, miny] = lonLatToWebMercator(minLon, minLat);
@@ -29,21 +55,21 @@ router.post("/export-zip", async (req, res, next) => {
 
     const zip = new JSZip();
 
-    for (const layer of layers) {
-      if (!layer.visible) continue;
+    for (const layerName of layers) {
+      const layer: LayerName = layerName; // just for type clarity
 
       try {
         let rawFeatures: RawWay[];
 
-        if (layer.name === "water") {
+        if (layer === "water") {
           rawFeatures = await fetchWaterPolygons(
             [minLat, minLon, maxLat, maxLon]
           );
-        } else if (layer.name === "parks") {
+        } else if (layer === "parks") {
           rawFeatures = await fetchParkPolygons(
             [minLat, minLon, maxLat, maxLon]
           );
-        } else if (layer.name === "land") {
+        } else if (layer === "land") {
           const coordsLatLon: [number, number][] = [
             [minLat, minLon],
             [minLat, maxLon],
@@ -57,34 +83,42 @@ router.post("/export-zip", async (req, res, next) => {
               tags: {},
             },
           ];
+        } else if (layer === "labels") {
+          rawFeatures = await fetchLabelFeatures(
+            [minLat, minLon, maxLat, maxLon]
+          );
         } else {
           rawFeatures = await fetchOsmLayer(
             [minLat, minLon, maxLat, maxLon],
-            layer.name
+            layer
           );
         }
 
         logger.info("layer_render_start", {
-          layer: layer.name,
+          layer,
           featureCount: rawFeatures.length,
         });
 
-        const features: ProjectedFeature[] = rawFeatures.map(({ coords, tags }) => ({
-          coords: coords.map(([lat, lon]) => lonLatToWebMercator(lon, lat)),
-          tags,
-        }));
+        const features: ProjectedFeature[] = rawFeatures.map(
+          ({ coords, tags, role, relationId }) => ({
+            coords: coords.map(([lat, lon]) => lonLatToWebMercator(lon, lat)),
+            tags,
+            role,
+            relationId,
+          })
+        );
 
         const svg = generateSvgForLayer(
-          layer.name,
+          layer,
           features,
           bboxMercator,
           canvas
         );
 
-        zip.file(`${layer.name}.svg`, svg);
+        zip.file(`${layer}.svg`, svg);
       } catch (e: any) {
         logger.error("layer_render_failed", {
-          layer: layer.name,
+          layer: layerName,
           error: e.message,
         });
         continue;
@@ -97,7 +131,10 @@ router.post("/export-zip", async (req, res, next) => {
     res.setHeader("Content-Disposition", 'attachment; filename="clipmap_layers.zip"');
     res.send(zipBuffer);
 
-    logger.info("export_request_completed", { bbox, layers: layers.map(l => l.name) });
+    logger.info("export_request_completed", {
+      bbox,
+      layers,
+    });
   } catch (err) {
     next(err);
   }

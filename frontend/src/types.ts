@@ -4,7 +4,8 @@ export type LayerName =
   | "parks"
   | "roads"
   | "railways"
-  | "buildings";
+  | "buildings"
+  | "labels";
 
 export interface BBox {
   minLat: number;
@@ -13,6 +14,7 @@ export interface BBox {
   maxLon: number;
 }
 
+// UI-only; backend never sees this
 export interface LayerConfig {
   name: LayerName;
   visible: boolean;
@@ -20,5 +22,5 @@ export interface LayerConfig {
 
 export interface MapExportRequest {
   bbox: BBox;
-  layers: LayerConfig[];
+  layers: LayerName[];
 }

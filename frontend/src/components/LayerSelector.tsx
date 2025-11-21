@@ -8,6 +8,7 @@ const ALL_LAYERS: { name: LayerName; label: string }[] = [
   { name: "roads",      label: "Roads" },
   { name: "railways",   label: "Railways" },
   { name: "buildings",  label: "Buildings" },
+  { name: "labels",     label: "Labels" },
 ];
 
 interface Props {
@@ -29,7 +30,15 @@ export const LayerSelector: React.FC<Props> = ({ layers, onChange }) => {
         const current = layers.find(l => l.name === layer.name);
         const checked = current ? current.visible : true;
         return (
-          <label key={layer.name} style={{ fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
+          <label
+            key={layer.name}
+            style={{
+              fontSize: 14,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
             <input
               type="checkbox"
               checked={checked}

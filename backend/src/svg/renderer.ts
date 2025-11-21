@@ -7,7 +7,7 @@ function roadStrokeWidth(
 ): number {
   const highway = tags["highway"] || "";
   const base = Math.max(canvas.width, canvas.height);
-  const unit = base / 2048; // scale with export size
+  const unit = base / 2048;
 
   switch (highway) {
     case "motorway":
@@ -38,8 +38,23 @@ function roadStrokeWidth(
     case "steps":
       return 1.0 * unit;
     default:
-      return 1.8 * unit; // fallback for anything weird
+      return 1.8 * unit;
   }
+}
+
+function isClosed(coords: [number, number][]): boolean {
+  if (coords.length < 4) return false;
+  const [x0, y0] = coords[0];
+  const [x1, y1] = coords[coords.length - 1];
+  return Math.abs(x0 - x1) < 1e-6 && Math.abs(y0 - y1) < 1e-6;
+}
+
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 export function generateSvgForLayer(
@@ -57,9 +72,114 @@ export function generateSvgForLayer(
   );
   svgParts.push(`<g id="layer-${layerName}">`);
 
+  // LABELS: render as <text>, not paths
+  if (layerName === "labels") {
+    const base = Math.max(width, height);
+    const baseFont = Math.max(10, Math.min(28, base / 220));
+
+    for (const feat of features) {
+      if (!feat.coords.length) continue;
+      const name = feat.tags["name"];
+      if (!name) continue;
+
+      const [mx, my] = feat.coords[0];
+      const [sx, sy] = mercatorToSvg(mx, my, minx, maxx, miny, maxy, width, height);
+
+      svgParts.push(
+        `<text x="${sx.toFixed(2)}" y="${sy.toFixed(
+          2
+        )}" font-size="${baseFont.toFixed(
+          1
+        )}" text-anchor="middle" fill="#000">${escapeXml(name)}</text>`
+      );
+    }
+
+    svgParts.push(`</g>`);
+    svgParts.push(
+      `<text x="10" y="${height - 10}" font-size="12" fill="#777">© OpenStreetMap contributors</text>`
+    );
+    svgParts.push("</svg>");
+    return svgParts.join("\n");
+  }
+
+  // WATER: handle multipolygons with inner rings (islands)
+  if (layerName === "water") {
+    const grouped = new Map<string, ProjectedFeature[]>();
+    const ungrouped: ProjectedFeature[] = [];
+
+    for (const feat of features) {
+      if (feat.relationId != null) {
+        const key = String(feat.relationId);
+        const arr = grouped.get(key);
+        if (arr) arr.push(feat);
+        else grouped.set(key, [feat]);
+      } else {
+        ungrouped.push(feat);
+      }
+    }
+
+    const buildPathForCoords = (coords: [number, number][]) => {
+      let d = "";
+      coords.forEach(([mx, my], i) => {
+        const [sx, sy] = mercatorToSvg(
+          mx,
+          my,
+          minx,
+          maxx,
+          miny,
+          maxy,
+          width,
+          height
+        );
+        d += `${i === 0 ? "M" : "L"}${sx.toFixed(2)},${sy.toFixed(2)} `;
+      });
+      if (isClosed(coords)) d += "Z";
+      return d;
+    };
+
+    // Multipolygon groups: outer + inner, fill-rule=evenodd
+    for (const [, feats] of grouped) {
+      const outers = feats.filter(f => f.role !== "inner");
+      const inners = feats.filter(f => f.role === "inner");
+
+      if (!outers.length) continue;
+
+      let d = "";
+      for (const f of outers) {
+        d += buildPathForCoords(f.coords);
+      }
+      for (const f of inners) {
+        d += buildPathForCoords(f.coords);
+      }
+
+      svgParts.push(
+        `<path d="${d.trim()}" fill="#b3d9ff" stroke="none" stroke-width="0" fill-rule="evenodd" />`
+      );
+    }
+
+    // Ungrouped standalone water polygons
+    for (const feat of ungrouped) {
+      if (feat.coords.length < 3) continue;
+      let d = buildPathForCoords(feat.coords);
+      svgParts.push(
+        `<path d="${d.trim()}" fill="#b3d9ff" stroke="none" stroke-width="0" />`
+      );
+    }
+
+    svgParts.push(`</g>`);
+    svgParts.push(
+      `<text x="10" y="${height - 10}" font-size="12" fill="#777">© OpenStreetMap contributors</text>`
+    );
+    svgParts.push("</svg>");
+    return svgParts.join("\n");
+  }
+
+  // All other layers
   for (const feat of features) {
     const coords = feat.coords;
     if (coords.length < 2) continue;
+
+    const closed = isClosed(coords);
 
     let d = "";
     coords.forEach(([mx, my], i) => {
@@ -77,22 +197,17 @@ export function generateSvgForLayer(
       strokeWidth = defaultStrokeWidth(layerName, canvas);
     }
 
-    if (layerName === "buildings") {
+    if (layerName === "buildings" && closed) {
       fill = "#222";
-      stroke = "none";       // clean building blocks, no outlines
-      strokeWidth = 0;       // irrelevant when stroke="none"
-      d += "Z";
-    } else if (layerName === "water") {
-      fill = "#b3d9ff";
       stroke = "none";
       strokeWidth = 0;
       d += "Z";
-    } else if (layerName === "land") {
+    } else if (layerName === "land" && closed) {
       fill = "#f5f3ef";
       stroke = "none";
       strokeWidth = 0;
       d += "Z";
-    } else if (layerName === "parks") {
+    } else if (layerName === "parks" && closed) {
       fill = "#cdeac0";
       stroke = "none";
       strokeWidth = 0;
