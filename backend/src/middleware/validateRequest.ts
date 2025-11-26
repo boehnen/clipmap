@@ -13,7 +13,7 @@ const VALID_LAYERS: Set<LayerName> = new Set([
   "labels",
 ]);
 
-const EXTENT_MAX_DEG = 4;
+const EXTENT_MAX_DEG = 1;
 const MIN_LAT = -90;
 const MAX_LAT = 90;
 const MIN_LON = -180;

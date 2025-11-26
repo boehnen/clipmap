@@ -10,11 +10,11 @@ export interface LatLonBBox {
 }
 
 // Breakpoints for detail levels (in normalized degrees)
-export const DETAIL_FINE_MAX_DEG = 1.0;
-export const DETAIL_MEDIUM_MAX_DEG = 5.0;
+export const DETAIL_FINE_MAX_DEG = 0.2;
+export const DETAIL_MEDIUM_MAX_DEG = 0.5;
 
 // Absolute maximum normalized extent allowed (in degrees)
-export const EXTENT_MAX_DEG = 4.0;
+export const EXTENT_MAX_DEG = 1.0;
 
 // --- Helpers ---
 

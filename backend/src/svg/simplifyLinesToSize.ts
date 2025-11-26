@@ -189,45 +189,43 @@ function linesToMultilinePathD(
 }
 
 /**
- * Build a test SVG string to measure file size
+ * Estimate SVG file size from path data without building full SVG string
+ * This saves memory during binary search iterations
  */
-function buildTestSvg(
-  pathData: string,
-  width: number,
-  height: number,
-  layerId: string,
-  strokeWidth: number
-): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><g id="${layerId}"><path d="${pathData}" stroke="#000" stroke-width="${strokeWidth}" fill="none" /></g></svg>`;
-}
-
-/**
- * Build complete SVG to measure total size across all stroke width groups
- */
-function buildCompleteTestSvg(
+function estimateSvgSize(
   pathsByStrokeWidth: Map<number, string>,
   width: number,
   height: number,
   layerId: string,
   isRailway: boolean = false
-): string {
-  const paths: string[] = [];
+): number {
+  // SVG overhead: opening tags + closing tags
+  // <svg xmlns="http://www.w3.org/2000/svg" width="..." height="..." viewBox="..."><g id="...">...</g></svg>
+  const overhead = 150 + layerId.length + width.toString().length + height.toString().length;
+  
+  let totalPathSize = 0;
   for (const [strokeWidth, pathD] of pathsByStrokeWidth.entries()) {
     if (!pathD) continue;
+    
+    const pathDataSize = Buffer.byteLength(pathD, 'utf8');
     
     if (isRailway) {
       // Railways: solid base + dotted overlay
       const baseWidth = strokeWidth;
       const dotWidth = baseWidth * 2;
       const gap = baseWidth * 3;
-      paths.push(`<path d="${pathD}" stroke="#000" stroke-width="${baseWidth.toFixed(2)}" fill="none" />`);
-      paths.push(`<path d="${pathD}" stroke="#000" stroke-width="${dotWidth.toFixed(2)}" fill="none" stroke-linecap="round" stroke-dasharray="0,${gap.toFixed(2)}" />`);
+      // Two path tags: base + dotted overlay
+      const baseTagOverhead = 80 + baseWidth.toFixed(2).length; // <path d="..." stroke="#000" stroke-width="..." fill="none" />
+      const dotTagOverhead = 120 + dotWidth.toFixed(2).length + gap.toFixed(2).length; // <path d="..." stroke="#000" stroke-width="..." fill="none" stroke-linecap="round" stroke-dasharray="0,..." />
+      totalPathSize += pathDataSize + baseTagOverhead + dotTagOverhead;
     } else {
-      paths.push(`<path d="${pathD}" stroke="#000" stroke-width="${strokeWidth.toFixed(2)}" fill="none" />`);
+      // Single path tag
+      const pathTagOverhead = 80 + strokeWidth.toFixed(2).length; // <path d="..." stroke="#000" stroke-width="..." fill="none" />
+      totalPathSize += pathDataSize + pathTagOverhead;
     }
   }
   
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><g id="${layerId}">${paths.join("")}</g></svg>`;
+  return overhead + totalPathSize;
 }
 
 /**
@@ -263,8 +261,7 @@ export function simplifyLinesToSize(
     noSimplifyPaths.set(strokeWidth, pathD);
   }
   
-  const noSimplifySvg = buildCompleteTestSvg(noSimplifyPaths, width, height, layerId, isRailway);
-  const noSimplifySize = Buffer.byteLength(noSimplifySvg, 'utf8');
+  const noSimplifySize = estimateSvgSize(noSimplifyPaths, width, height, layerId, isRailway);
 
   if (noSimplifySize <= MAX_SVG_SIZE_BYTES) {
     return noSimplifyPaths;
@@ -288,8 +285,7 @@ export function simplifyLinesToSize(
       currentPaths.set(strokeWidth, pathD);
     }
     
-    const testSvg = buildCompleteTestSvg(currentPaths, width, height, layerId, isRailway);
-    const size = Buffer.byteLength(testSvg, 'utf8');
+    const size = estimateSvgSize(currentPaths, width, height, layerId, isRailway);
 
     attempts++;
 

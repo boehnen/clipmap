@@ -8,10 +8,18 @@ export interface ExportProgress {
   progress?: number;
   file?: string;
   error?: string;
+  queuePosition?: number;
 }
 
 // Map backend steps to friendly user-facing messages
-function getFriendlyStepName(step: string): string {
+function getFriendlyStepName(step: string, queuePosition?: number): string {
+  if (step === "queued" && queuePosition !== undefined) {
+    if (queuePosition === 0) {
+      return "🚀 Starting your export...";
+    }
+    return `⏳ Waiting in queue... Position #${queuePosition}`;
+  }
+  
   const stepMap: Record<string, string> = {
     "starting": "🌍 Preparing your map...",
     "fetching_water_land": "🌊 Gathering land and water data...",
@@ -72,12 +80,17 @@ export function exportZipWithProgress(
         buffer = lines.pop() || "";
 
         for (const line of lines) {
+          // Skip empty lines and keepalive comments
+          if (!line.trim() || line.startsWith(":")) {
+            continue;
+          }
+          
           if (line.startsWith("data: ")) {
             try {
               const data = line.slice(6);
               const progress: ExportProgress = JSON.parse(data);
               const originalStep = progress.step;
-              progress.step = getFriendlyStepName(originalStep);
+              progress.step = getFriendlyStepName(originalStep, progress.queuePosition);
               onProgress(progress);
 
               if (originalStep === "complete" && progress.file) {

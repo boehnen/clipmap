@@ -4,7 +4,7 @@ export const CONFIG = {
 
   // CORS configuration
   corsOrigins: process.env.CORS_ORIGINS
-    ? process.env.CORS_ORIGINS.split(",").map((s) => s.trim())
+    ? process.env.CORS_ORIGINS.split(",").map((s) => s.trim().replace(/\/+$/, "")) // Remove trailing slashes
     : ["http://localhost:5173", "http://127.0.0.1:5173"],
 
   // Environment

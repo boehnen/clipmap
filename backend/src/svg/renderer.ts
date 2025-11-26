@@ -390,7 +390,7 @@ export function generateSvgForLayer(
     let strokeWidth: number;
     let fill = "none";
 
-    strokeWidth = defaultStrokeWidth(layerName, canvas);
+      strokeWidth = defaultStrokeWidth(layerName, canvas);
 
     if (layerName === "buildings" && closed) {
       fill = "#222";

@@ -84,15 +84,17 @@ function multipolygonToPathD(
 }
 
 /**
- * Build a test SVG string to measure file size
+ * Estimate SVG file size from path data without building full SVG string
+ * This saves memory during binary search iterations
  */
-function buildTestSvg(
-  pathData: string,
-  width: number,
-  height: number,
-  layerId: string
-): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><g id="${layerId}"><path d="${pathData}" fill="#000" stroke="none" stroke-width="0" fill-rule="evenodd" /></g></svg>`;
+function estimateSvgSize(pathData: string, width: number, height: number, layerId: string): number {
+  // SVG overhead: opening tags + closing tags
+  // <svg xmlns="http://www.w3.org/2000/svg" width="..." height="..." viewBox="..."><g id="..."><path d="..." fill="#000" stroke="none" stroke-width="0" fill-rule="evenodd" /></g></svg>
+  const overhead = 150 + layerId.length + width.toString().length + height.toString().length;
+  // Path data size + path tag overhead
+  const pathDataSize = Buffer.byteLength(pathData, 'utf8');
+  const pathTagOverhead = 60; // <path d="..." fill="#000" stroke="none" stroke-width="0" fill-rule="evenodd" />
+  return overhead + pathDataSize + pathTagOverhead;
 }
 
 /**
@@ -135,8 +137,7 @@ export function simplifyMultipolygonToSize(
 
   // First, check if no simplification is needed
   const noSimplifyPathD = multipolygonToPathD(mp, bboxMerc, canvas, 0, precision);
-  const noSimplifySvg = buildTestSvg(noSimplifyPathD, width, height, layerId);
-  const noSimplifySize = Buffer.byteLength(noSimplifySvg, 'utf8');
+  const noSimplifySize = estimateSvgSize(noSimplifyPathD, width, height, layerId);
 
   if (noSimplifySize <= MAX_SVG_SIZE_BYTES) {
     return noSimplifyPathD;
@@ -146,8 +147,7 @@ export function simplifyMultipolygonToSize(
   while (attempts < maxAttempts && (high - low) > minEpsilon * 0.1) {
     const epsilon = (low + high) / 2;
     const pathD = multipolygonToPathD(mp, bboxMerc, canvas, epsilon, precision);
-    const testSvg = buildTestSvg(pathD, width, height, layerId);
-    const size = Buffer.byteLength(testSvg, 'utf8');
+    const size = estimateSvgSize(pathD, width, height, layerId);
 
     attempts++;
 

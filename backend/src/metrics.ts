@@ -19,6 +19,9 @@ class Counter {
   }
 
   toPrometheus(name: string, help: string): string {
+    if (this.data.size === 0) {
+      return ""; // Don't output empty metrics
+    }
     let out = `# HELP ${name} ${help}\n# TYPE ${name} counter\n`;
     for (const [key, value] of this.data.entries()) {
       const labelPart = key ? `{${key}}` : "";
@@ -51,6 +54,9 @@ class Histogram {
   }
 
   toPrometheus(name: string, help: string): string {
+    if (this.counts.size === 0) {
+      return ""; // Don't output empty metrics
+    }
     let out = `# HELP ${name} ${help}\n# TYPE ${name} histogram\n`;
     for (const [key, arr] of this.counts.entries()) {
       const baseLabels = key ? `${key},` : "";
@@ -97,29 +103,38 @@ export const metrics = {
   },
 
   toPrometheus(): string {
-    let out = "";
-    out += httpRequestsTotal.toPrometheus(
+    const parts: string[] = [];
+    
+    const httpRequests = httpRequestsTotal.toPrometheus(
       "clipmap_http_requests_total",
       "Total HTTP requests"
     );
-    out += "\n";
-    out += httpErrorsTotal.toPrometheus(
+    if (httpRequests) parts.push(httpRequests);
+    
+    const httpErrors = httpErrorsTotal.toPrometheus(
       "clipmap_http_errors_total",
       "Total HTTP errors (5xx + internal)"
     );
-    out += "\n";
-    out += httpRequestDurationMs.toPrometheus(
+    if (httpErrors) parts.push(httpErrors);
+    
+    const httpDuration = httpRequestDurationMs.toPrometheus(
       "clipmap_http_request_duration_ms",
       "HTTP request duration in milliseconds"
     );
-    out += "\n";
-    out += overpassRequestsTotal.toPrometheus(
+    if (httpDuration) parts.push(httpDuration);
+    
+    const overpassRequests = overpassRequestsTotal.toPrometheus(
       "clipmap_overpass_requests_total",
       "Overpass requests by layer/endpoint/status"
     );
+    if (overpassRequests) parts.push(overpassRequests);
     
-    // Write metrics snapshot to files
-    writeMetricsSnapshot(out);
+    const out = parts.length > 0 ? parts.join("\n\n") + "\n" : "";
+    
+    // Only write metrics snapshot if we have data
+    if (out) {
+      writeMetricsSnapshot(out);
+    }
     
     return out;
   },

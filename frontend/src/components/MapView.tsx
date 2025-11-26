@@ -14,7 +14,7 @@ import type { BBox } from "../types";
 const DEFAULT_CENTER: [number, number] = [40.7128, -74.006]; // NYC
 const DEFAULT_ZOOM = 12;
 
-const EXTENT_MAX_DEG = 4;
+const EXTENT_MAX_DEG = 1;
 
 export type DetailLevel = "fine" | "medium" | "coarse";
 
@@ -117,7 +117,7 @@ function ExportController({
     let detailLevel: DetailLevel;
     if (normalizedSpanDeg <= 0.2) {
       detailLevel = "fine";
-    } else if (normalizedSpanDeg <= 0.8) {
+    } else if (normalizedSpanDeg <= 0.5) {
       detailLevel = "medium";
     } else {
       detailLevel = "coarse";

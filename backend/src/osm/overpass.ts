@@ -19,8 +19,9 @@ export function computeDetailLevel(
     Math.abs(lonSpan * Math.cos(latMidRad))
   );
 
+  // Updated thresholds: fine = 0-0.2°, medium = 0.2-0.5°, coarse = 0.5°+
   if (normalizedSpanDeg <= 0.2) return "fine";
-  if (normalizedSpanDeg <= 0.8) return "medium";
+  if (normalizedSpanDeg <= 0.5) return "medium";
   return "coarse";
 }
 

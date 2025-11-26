@@ -44,8 +44,9 @@ export async function fetchOsmLayer(
   let bboxes: [number, number, number, number][];
   const shouldSplit = shouldSplitBbox(bbox) || shouldSplitBboxForLayer(bbox, layer);
   if (shouldSplit) {
-    // Use smaller chunks for roads (1.5°) since they're very dense
-    const maxSpan = layer === "roads" ? 1.5 : 2.0;
+    // Use smaller chunks for roads (1.0°) since they're very dense and can cause stack overflow
+    // Other layers can use 2.0° chunks
+    const maxSpan = layer === "roads" ? 1.0 : 2.0;
     bboxes = splitBbox(bbox, maxSpan);
   } else {
     bboxes = [bbox];
@@ -54,20 +55,46 @@ export async function fetchOsmLayer(
   const allWays: RawWay[] = [];
   const wayIds = new Set<string>();
 
-  for (let i = 0; i < bboxes.length; i++) {
-    const chunk = bboxes[i];
+  // Process chunks, retrying with smaller splits if a chunk fails
+  const processChunk = async (chunkBbox: [number, number, number, number], attempt: number = 0): Promise<void> => {
     try {
-      const query = buildOverpassQuery(chunk, layer);
+      const query = buildOverpassQuery(chunkBbox, layer);
       const data = await runOverpassQuery(query, layer);
+      
+      // Check if response is too large (might cause stack overflow)
+      if (data.elements && data.elements.length > 500000) {
+        // Response is huge - split this chunk further
+        const [minLat, minLon, maxLat, maxLon] = chunkBbox;
+        const latSpan = maxLat - minLat;
+        const lonSpan = maxLon - minLon;
+        
+        // Only retry with smaller chunks if chunk is still splittable (>0.5°)
+        if (attempt < 3 && (latSpan > 0.5 || lonSpan > 0.5)) {
+          logger.warn("layer_chunk_too_large_splitting", {
+            layer,
+            elementCount: data.elements.length,
+            chunkSize: `${latSpan.toFixed(3)}° x ${lonSpan.toFixed(3)}°`,
+            attempt: attempt + 1,
+          });
+          
+          const smallerChunks = splitBbox(chunkBbox, Math.max(latSpan, lonSpan) / 2);
+          for (const smallerChunk of smallerChunks) {
+            await processChunk(smallerChunk, attempt + 1);
+          }
+          return;
+        }
+      }
+      
       const nodes = new Map<number, [number, number]>();
-      const ways: RawWay[] = [];
 
+      // Process nodes first
       for (const el of data.elements) {
         if (el.type === "node") {
           nodes.set(el.id, [el.lat, el.lon]);
         }
       }
 
+      // Process ways and add directly to allWays to avoid stack overflow from spread operator
       for (const el of data.elements) {
         if (el.type === "way") {
           const coords: [number, number][] = [];
@@ -80,21 +107,52 @@ export async function fetchOsmLayer(
             const wayKey = `way_${el.id}`;
             if (!wayIds.has(wayKey)) {
               wayIds.add(wayKey);
-              ways.push({ coords, tags: el.tags || {} });
+              allWays.push({ coords, tags: el.tags || {} });
             }
           }
         }
       }
-
-      allWays.push(...ways);
+      
+      // Clear nodes map to free memory
+      nodes.clear();
     } catch (e: any) {
+      const [minLat, minLon, maxLat, maxLon] = chunkBbox;
+      const latSpan = maxLat - minLat;
+      const lonSpan = maxLon - minLon;
+      const errorMsg = e?.message || String(e);
+      const isStackOverflow = errorMsg.includes("Maximum call stack size exceeded") ||
+                              errorMsg.includes("stack size exceeded") ||
+                              errorMsg.includes("stack overflow");
+      
+      // If error is stack overflow and chunk is still splittable, try splitting further
+      if (isStackOverflow && attempt < 4 && (latSpan > 0.25 || lonSpan > 0.25)) {
+        logger.warn("layer_chunk_stack_overflow_splitting", {
+          layer,
+          chunkSize: `${latSpan.toFixed(3)}° x ${lonSpan.toFixed(3)}°`,
+          attempt: attempt + 1,
+          error: errorMsg.substring(0, 100),
+        });
+        
+        const smallerChunks = splitBbox(chunkBbox, Math.max(latSpan, lonSpan) / 2);
+        for (const smallerChunk of smallerChunks) {
+          await processChunk(smallerChunk, attempt + 1);
+        }
+        return;
+      }
+      
+      // Log error and skip this chunk (but don't fail the entire export)
       logger.warn("layer_chunk_failed", {
         layer,
-        chunk: i + 1,
-        error: e.message,
+        error: errorMsg.substring(0, 200),
+        chunkSize: `${latSpan.toFixed(3)}° x ${lonSpan.toFixed(3)}°`,
+        attempt,
+        isStackOverflow,
       });
-      // Continue with other chunks
     }
+  };
+
+  for (let i = 0; i < bboxes.length; i++) {
+    await processChunk(bboxes[i]);
   }
 
   return allWays;

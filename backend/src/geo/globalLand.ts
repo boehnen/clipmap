@@ -35,16 +35,20 @@ interface GeoJSONFeatureCollection {
 // Must match the grid you created in QGIS
 // Smaller tiles = less simplification needed = more detail preserved
 const TILE_SIZE_DEG = 5; // TODO: Consider 5° or 2° for better detail preservation
+// Use process.cwd() to find data directory regardless of where compiled code is located
+// In production: data is at /app/src/data/base/land-tiles
+// In development: data is at <project>/backend/src/data/base/land-tiles
 const LAND_TILES_DIR = path.join(
-  __dirname,
-  "..",
+  process.cwd(),
+  "src",
   "data",
   "base",
   "land-tiles"
 );
 
-// cache: tileId -> MultiPolygon (in WebMercator) or null if missing/empty
-const tileCache = new Map<string, MultiPolygon | null>();
+// No cache - tiles are loaded fresh for each request
+// Since we process requests sequentially (queue) and clear cache after each request,
+// caching provides no benefit and wastes memory
 
 // Maximum points per ring before simplification to prevent polygon-clipping issues
 const MAX_POINTS_PER_RING = 5000;
@@ -78,14 +82,9 @@ function getTileIdsForBBox(
 }
 
 function loadLandTileMercator(tileId: string): MultiPolygon | null {
-  if (tileCache.has(tileId)) {
-    return tileCache.get(tileId)!;
-  }
-
   const filePath = path.join(LAND_TILES_DIR, `${tileId}.geojson`);
   if (!fs.existsSync(filePath)) {
     logger.warn("base_tile_missing", { tileId });
-    tileCache.set(tileId, null);
     return null;
   }
 
@@ -117,8 +116,6 @@ function loadLandTileMercator(tileId: string): MultiPolygon | null {
     }
   }
   
-  // Cache the unsimplified version - simplification happens only when needed for safety
-  tileCache.set(tileId, mp.length ? mp : null);
   return mp.length ? mp : null;
 }
 
@@ -226,7 +223,9 @@ export function getBaseWaterFeaturesForBBox(
   // This is NOT for file size, just for computational safety
   const safetyEpsilon = span / 500000; // Very conservative - only for safety
 
-  const clippedLandPieces: MultiPolygon[] = [];
+  // Process tiles one at a time to minimize memory usage
+  // Don't store all clipped pieces in memory - process immediately
+  let waterMP: MultiPolygon = bboxMP;
 
   for (const id of tileIds) {
     // Load tile - only pre-simplify if it would be too complex for polygon operations
@@ -235,28 +234,42 @@ export function getBaseWaterFeaturesForBBox(
       logger.warn("tile_empty_or_missing", { tileId: id });
       continue;
     }
-
-    // Check if simplification is needed before clipping
-    // Simplify if any ring exceeds safety threshold OR if tile has too many total points
-    let needsSimplification = false;
+    
+    // Immediately simplify large tiles to reduce memory usage
+    // More aggressive simplification for memory-constrained environments
     let totalPoints = 0;
     for (const poly of tileMp) {
       for (const ring of poly) {
         totalPoints += ring.length;
-        if (ring.length > MAX_POINTS_PER_RING) {
-          needsSimplification = true;
-        }
       }
     }
     
-    // Also simplify if total complexity is very high (even if individual rings are OK)
-    if (totalPoints > 50000) {
-      needsSimplification = true;
+    // If tile is very large (>100k points), simplify more aggressively
+    let preClipped = tileMp;
+    if (totalPoints > 100000) {
+      // More aggressive simplification for large tiles
+      const aggressiveEpsilon = safetyEpsilon * 10;
+      preClipped = simplifyMultiPolygon(tileMp, aggressiveEpsilon, false);
+    } else if (totalPoints > 50000) {
+      preClipped = simplifyMultiPolygon(tileMp, safetyEpsilon * 5, false);
+    } else {
+      // Check if simplification is needed before clipping
+      let needsSimplification = false;
+      for (const poly of tileMp) {
+        for (const ring of poly) {
+          if (ring.length > MAX_POINTS_PER_RING) {
+            needsSimplification = true;
+            break;
+          }
+        }
+        if (needsSimplification) break;
+      }
+      
+      if (needsSimplification) {
+        preClipped = simplifyMultiPolygon(tileMp, safetyEpsilon, false);
+      }
     }
-    
-    const preClipped = needsSimplification
-      ? simplifyMultiPolygon(tileMp, safetyEpsilon, false)
-      : tileMp;
+
 
     // Clip tile to bbox
     // Try progressively more aggressive simplification if clipping fails
@@ -304,39 +317,19 @@ export function getBaseWaterFeaturesForBBox(
 
     if (!clippedRaw || !clippedRaw.length) continue;
 
-    // NO final simplification pass - preserve all detail for rendering stage
-    // File-size-driven simplification will happen in rendering
-    clippedLandPieces.push(clippedRaw);
-  }
-
-  // If no land tiles intersect, the whole bbox is water
-  if (!clippedLandPieces.length) {
-    return [
-      {
-        coords: bboxRing,
-        tags: {},
-        role: "outer",
-      },
-    ];
-  }
-
-  // Iteratively subtract each land piece from the bbox polygon.
-  // This avoids a huge union of all land tiles in one go.
-  let waterMP: MultiPolygon = bboxMP;
-
-  for (const landMP of clippedLandPieces) {
+    // Process this clipped tile immediately - don't store all in memory
+    // Subtract from waterMP right away
     if (!waterMP.length) break;
     
     // Simplify waterMP only if it's getting too complex (to prevent infinite loops)
-    // Use a higher threshold to preserve accuracy
+    // More aggressive simplification for memory-constrained environments
     if (waterMP.length > 0) {
       const totalPoints = waterMP.reduce((sum, poly) => 
         sum + poly.reduce((s, ring) => s + ring.length, 0), 0
       );
-      // Only simplify if we're approaching dangerous complexity (for safety only)
-      // Use minimal safety epsilon, not detail-based
-      if (totalPoints > 50000) {
-        waterMP = simplifyMultiPolygon(waterMP, safetyEpsilon, false);
+      // Simplify more aggressively to keep memory usage down
+      if (totalPoints > 30000) {
+        waterMP = simplifyMultiPolygon(waterMP, safetyEpsilon * 3, false);
       }
     }
     
@@ -344,15 +337,15 @@ export function getBaseWaterFeaturesForBBox(
     try {
       diff = polygonClipping.difference(
         waterMP as any,
-        landMP as any
+        clippedRaw as any
       ) as MultiPolygon;
     } catch (e: any) {
       logger.warn("polygon_difference_failed", {
         error: e.message,
       });
-      // If difference fails, simplify slightly more and try again (still minimal)
-      const simplifiedWater = simplifyMultiPolygon(waterMP, safetyEpsilon * 3, false);
-      const simplifiedLand = simplifyMultiPolygon(landMP, safetyEpsilon * 3, false);
+      // If difference fails, simplify more aggressively and try again
+      const simplifiedWater = simplifyMultiPolygon(waterMP, safetyEpsilon * 5, false);
+      const simplifiedLand = simplifyMultiPolygon(clippedRaw, safetyEpsilon * 5, false);
       try {
         diff = polygonClipping.difference(
           simplifiedWater as any,

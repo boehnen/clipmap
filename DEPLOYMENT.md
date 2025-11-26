@@ -78,10 +78,17 @@ Example: `https://clipmap-backend.onrender.com`
 ### 2.2 Configure Build Settings
 
 **Build Configuration:**
-- **Framework preset**: Vite
+- **Framework preset**: Vite (or None if not available)
 - **Root directory**: `frontend`
 - **Build command**: `npm run build`
 - **Build output directory**: `dist`
+- **Deploy command**: `echo "Static site deployment"` (or leave empty if not required)
+
+> **Important**: 
+> - If "Deploy command" is marked as required, use a simple no-op command like `echo "Static site deployment"` or `true`
+> - Cloudflare Pages automatically deploys the built static files from the `dist` directory
+> - The deploy command is typically not needed for static sites, but some Cloudflare Pages configurations may require it
+> - Do NOT use `npx wrangler deploy` - that's for Cloudflare Workers, not Pages
 
 **Environment Variables** (add in Settings → Environment Variables):
 ```
@@ -102,8 +109,9 @@ VITE_API_BASE_URL=https://clipmap-backend.onrender.com
 2. Navigate to your backend service → Environment
 3. Update the `CORS_ORIGINS` environment variable:
    ```
-   CORS_ORIGINS=https://clipmap.pages.dev
+   CORS_ORIGINS=https://clipmap.pages.dev,https://clipmap.boehnen.net
    ```
+   > **Note**: You can include multiple origins separated by commas. Trailing slashes are automatically removed, but it's best to include them without slashes.
 4. Render will automatically redeploy
 
 ### 2.5 (Optional) Custom Domain
@@ -196,12 +204,18 @@ VITE_API_BASE_URL=https://clipmap-backend.onrender.com
 - Check Cloudflare build logs
 - Verify `VITE_API_BASE_URL` is set correctly
 - Ensure all dependencies are in `package.json`
+- Make sure "Deploy command" is empty (not `npx wrangler deploy`)
 
 **API connection fails:**
 - Verify `VITE_API_BASE_URL` matches Render backend URL
 - Check browser console for CORS errors
 - Test backend URL directly: `https://clipmap-backend.onrender.com/healthz`
 - Wait for cold start if on free tier (~30s first request)
+
+**Configuration Issues:**
+- **"Deploy command" should be EMPTY** - Cloudflare Pages automatically deploys static sites
+- If you see `npx wrangler deploy` in the deploy command field, remove it
+- The "Deploy command" field is only for Cloudflare Workers, not Pages
 
 ---
 

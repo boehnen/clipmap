@@ -27,7 +27,7 @@ const INITIAL_LAYERS: LayerConfig[] = [
 const KM_TO_MILES = 0.621371;
 const KM2_TO_MI2 = 0.386102;
 const EARTH_RADIUS_KM = 6371;
-const EXTENT_MAX_DEG = 4;
+const EXTENT_MAX_DEG = 1;
 
 // Simple haversine distance in km between two lat/lon points
 function haversineKm(
@@ -70,7 +70,7 @@ function buildExportRegionFromBBox(bbox: BBox): ExportRegionInfo {
   let detailLevel: "fine" | "medium" | "coarse";
   if (normalizedSpanDeg <= 0.2) {
     detailLevel = "fine";
-  } else if (normalizedSpanDeg <= 0.8) {
+  } else if (normalizedSpanDeg <= 0.5) {
     detailLevel = "medium";
   } else {
     detailLevel = "coarse";
@@ -640,6 +640,11 @@ const pasteLabel =
               <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
                 <div style={{ fontSize: 12, width: "100%", textAlign: "left" }}>
                   {exportProgress.step}
+                  {exportProgress.queuePosition !== undefined && exportProgress.queuePosition > 0 && (
+                    <span style={{ marginLeft: 8, opacity: 0.7 }}>
+                      Position #{exportProgress.queuePosition}
+                    </span>
+                  )}
                 </div>
                 <div
                   style={{
@@ -654,7 +659,7 @@ const pasteLabel =
                     style={{
                       width: `${exportProgress.progress || 0}%`,
                       height: "100%",
-                      background: "#4caf50",
+                      background: exportProgress.queuePosition !== undefined && exportProgress.queuePosition > 0 ? "#ff9800" : "#4caf50",
                       transition: "width 0.3s ease",
                     }}
                   />
@@ -662,7 +667,7 @@ const pasteLabel =
               </div>
             ) : (
               `Export ${visibleLayerNames.length} layer${
-                visibleLayerNames.length === 1 ? "" : "s"
+                  visibleLayerNames.length === 1 ? "" : "s"
               } as ZIP`
             )}
           </button>
