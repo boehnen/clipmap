@@ -32,11 +32,13 @@ This guide covers deploying ClipMap using Render.com for the backend and Cloudfl
 
    **Settings:**
    - **Name**: `clipmap-backend`
-   - **Environment**: `Node`
+   - **Environment**: `Docker` (or `Node` if not using Dockerfile)
    - **Root Directory**: `backend`
-   - **Build Command**: `npm install && npm run build`
-   - **Start Command**: `npm start`
+   - **Build Command**: (Leave empty if using Docker, or `npm install && npm run build` if using Node)
+   - **Start Command**: (Leave empty if using Docker, or `npm start` if using Node)
    - **Plan**: Free (or $7/month for always-on)
+   
+   > **Note**: Render can use either Docker (recommended) or build directly from source. If using Docker, ensure your Dockerfile is in the `backend` directory.
 
    **Environment Variables** (add in Environment tab):
    ```
