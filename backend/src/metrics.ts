@@ -1,5 +1,6 @@
 // backend/src/metrics.ts
 import { CONFIG } from "./config";
+import { writeMetricsSnapshot } from "./fileLogger";
 
 type Labels = Record<string, string>;
 
@@ -116,6 +117,10 @@ export const metrics = {
       "clipmap_overpass_requests_total",
       "Overpass requests by layer/endpoint/status"
     );
+    
+    // Write metrics snapshot to files
+    writeMetricsSnapshot(out);
+    
     return out;
   },
 };

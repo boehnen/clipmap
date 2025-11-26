@@ -1,5 +1,6 @@
 // backend/src/logger.ts
 import { CONFIG } from "./config";
+import { writeLogEntry, LOGS_DIR } from "./fileLogger";
 
 type Level = "debug" | "info" | "warn" | "error";
 
@@ -26,6 +27,10 @@ function log(level: Level, msg: string, meta?: Record<string, unknown>) {
     ...meta,
   };
 
+  // Write to file
+  writeLogEntry(entry);
+  
+  // Also write to stdout for development/debugging
   // eslint-disable-next-line no-console
   console.log(JSON.stringify(entry));
 }

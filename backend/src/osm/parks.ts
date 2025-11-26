@@ -1,6 +1,9 @@
 // backend/src/osm/parks.ts
 import { RawWay } from "../types";
-import { buildOverpassQuery, runOverpassQuery } from "./overpass";
+import { buildOverpassQuery, runOverpassQuery, computeDetailLevel } from "./overpass";
+import { splitBbox, shouldSplitBbox } from "./bboxSplitter";
+import { filterParksBySize } from "./featureFilter";
+import { logger } from "../logger";
 
 function isParkArea(tags: Record<string, string>): boolean {
   const leisure = tags["leisure"];
@@ -102,80 +105,127 @@ function buildRingsFromSegments(
 export async function fetchParkPolygons(
   bbox: [number, number, number, number]
 ): Promise<RawWay[]> {
-  const query = buildOverpassQuery(bbox, "parks");
-  const data = await runOverpassQuery(query, "parks");
-
-  const nodes = new Map<number, [number, number]>();
-  const wayNodes = new Map<number, number[]>();
-  const wayTags = new Map<number, Record<string, string>>();
-  const relations: any[] = [];
-
-  for (const el of data.elements) {
-    if (el.type === "node") {
-      nodes.set(el.id, [el.lat, el.lon]);
-    }
+  // Split large bboxes into smaller chunks to avoid Overpass timeouts
+  // Use same logic as roads: split if latSpan > 2.5 or lonSpan > 2.5
+  const [minLat, minLon, maxLat, maxLon] = bbox;
+  const latSpan = maxLat - minLat;
+  const lonSpan = maxLon - minLon;
+  
+  let bboxes: [number, number, number, number][];
+  const shouldSplit = shouldSplitBbox(bbox) || latSpan > 2.5 || lonSpan > 2.5;
+  if (shouldSplit) {
+    // Use 1.5° chunks like roads for consistency
+    bboxes = splitBbox(bbox, 1.5);
+  } else {
+    bboxes = [bbox];
   }
+  
+  // Fetch parks from all chunks in parallel
+  const allPolygons: RawWay[] = [];
+  const parkIds = new Set<string>(); // Deduplicate by relation ID or geometry
+  
+  for (let i = 0; i < bboxes.length; i++) {
+    const chunk = bboxes[i];
+    try {
+      const query = buildOverpassQuery(chunk, "parks");
+      const data = await runOverpassQuery(query, "parks");
 
-  for (const el of data.elements) {
-    if (el.type === "way") {
-      wayNodes.set(el.id, el.nodes as number[]);
-      wayTags.set(el.id, el.tags || {});
-    } else if (el.type === "relation") {
-      relations.push(el);
-    }
-  }
+      const nodes = new Map<number, [number, number]>();
+      const wayNodes = new Map<number, number[]>();
+      const wayTags = new Map<number, Record<string, string>>();
+      const relations: any[] = [];
 
-  const polygons: RawWay[] = [];
-  const usedWayIds = new Set<number>();
-
-  for (const rel of relations) {
-    const tags: Record<string, string> = rel.tags || {};
-    if (!isParkArea(tags)) continue;
-    const members = rel.members || [];
-    const outerMembers = members.filter(
-      (m: any) => m.type === "way" && m.role === "outer"
-    );
-
-    const segments: [number, number][][] = [];
-
-    for (const m of outerMembers) {
-      const nodeIds = wayNodes.get(m.ref);
-      if (!nodeIds) continue;
-      const coords: [number, number][] = [];
-      for (const nid of nodeIds) {
-        const n = nodes.get(nid);
-        if (n) coords.push(n);
+      for (const el of data.elements) {
+        if (el.type === "node") {
+          nodes.set(el.id, [el.lat, el.lon]);
+        }
       }
-      if (coords.length >= 2) {
-        segments.push(coords);
-        usedWayIds.add(m.ref);
+
+      for (const el of data.elements) {
+        if (el.type === "way") {
+          wayNodes.set(el.id, el.nodes as number[]);
+          wayTags.set(el.id, el.tags || {});
+        } else if (el.type === "relation") {
+          relations.push(el);
+        }
       }
-    }
 
-    if (segments.length === 0) continue;
+      const polygons: RawWay[] = [];
+      const usedWayIds = new Set<number>();
 
-    const rings = buildRingsFromSegments(segments);
-    for (const ring of rings) {
-      polygons.push({ coords: ring, tags });
+      for (const rel of relations) {
+        const tags: Record<string, string> = rel.tags || {};
+        if (!isParkArea(tags)) continue;
+        const members = rel.members || [];
+        const outerMembers = members.filter(
+          (m: any) => m.type === "way" && m.role === "outer"
+        );
+
+        const segments: [number, number][][] = [];
+
+        for (const m of outerMembers) {
+          const nodeIds = wayNodes.get(m.ref);
+          if (!nodeIds) continue;
+          const coords: [number, number][] = [];
+          for (const nid of nodeIds) {
+            const n = nodes.get(nid);
+            if (n) coords.push(n);
+          }
+          if (coords.length >= 2) {
+            segments.push(coords);
+            usedWayIds.add(m.ref);
+          }
+        }
+
+        if (segments.length === 0) continue;
+
+        const rings = buildRingsFromSegments(segments);
+        for (const ring of rings) {
+          polygons.push({ coords: ring, tags, relationId: rel.id });
+        }
+      }
+
+      for (const [wayId, nodeIds] of wayNodes) {
+        if (usedWayIds.has(wayId)) continue;
+        const tags = wayTags.get(wayId) || {};
+        if (!isParkArea(tags)) continue;
+
+        const coords: [number, number][] = [];
+        for (const nid of nodeIds) {
+          const n = nodes.get(nid);
+          if (n) coords.push(n);
+        }
+        if (coords.length < 3) continue;
+
+        const closedCoords = coordsClosed(coords);
+        polygons.push({ coords: closedCoords, tags });
+      }
+
+      // Deduplicate: use relation ID or first coordinate as key
+      for (const poly of polygons) {
+        const key = poly.relationId 
+          ? `rel_${poly.relationId}`
+          : `coord_${poly.coords[0][0]}_${poly.coords[0][1]}`;
+        if (!parkIds.has(key)) {
+          parkIds.add(key);
+          allPolygons.push(poly);
+        }
+      }
+      
+    } catch (e: any) {
+      logger.warn("layer_chunk_failed", {
+        layer: "parks",
+        chunk: i + 1,
+        error: e.message,
+      });
+      // Continue with other chunks
     }
   }
-
-  for (const [wayId, nodeIds] of wayNodes) {
-    if (usedWayIds.has(wayId)) continue;
-    const tags = wayTags.get(wayId) || {};
-    if (!isParkArea(tags)) continue;
-
-    const coords: [number, number][] = [];
-    for (const nid of nodeIds) {
-      const n = nodes.get(nid);
-      if (n) coords.push(n);
-    }
-    if (coords.length < 3) continue;
-
-    const closedCoords = coordsClosed(coords);
-    polygons.push({ coords: closedCoords, tags });
-  }
-
-  console.log(`Built ${polygons.length} park polygons`);
-  return polygons;
+  
+  // Filter by size based on detail level (like map zoom levels)
+  // At coarse detail, only show larger parks that are meaningful at that scale
+  const detail = computeDetailLevel(bbox);
+  const filtered = filterParksBySize(allPolygons, bbox, detail);
+  
+  return filtered;
 }

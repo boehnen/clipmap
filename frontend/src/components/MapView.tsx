@@ -14,7 +14,7 @@ import type { BBox } from "../types";
 const DEFAULT_CENTER: [number, number] = [40.7128, -74.006]; // NYC
 const DEFAULT_ZOOM = 12;
 
-const EXTENT_MAX_DEG = 13;
+const EXTENT_MAX_DEG = 4;
 
 export type DetailLevel = "fine" | "medium" | "coarse";
 
@@ -34,6 +34,8 @@ interface MapViewProps {
   searchToken: number; // incremented in App to trigger search
   externalBBox: BBox | null;
   externalBBoxToken: number;
+  onSearchStateChange?: (isSearching: boolean) => void;
+  syncToViewportToken?: number; // incremented in App to sync rectangle to viewport
 }
 
 // Simple haversine distance between two points (km)
@@ -78,6 +80,8 @@ function ExportController({
   searchToken,
   externalBBox,
   externalBBoxToken,
+  onSearchStateChange,
+  syncToViewportToken,
 }: MapViewProps) {
   const map = useMap();
   const [bounds, setBounds] = useState<LatLngBounds | null>(null);
@@ -159,9 +163,13 @@ function ExportController({
 
   // Handle search
   useEffect(() => {
-    if (!searchTerm.trim()) return;
+    if (!searchTerm.trim()) {
+      onSearchStateChange?.(false);
+      return;
+    }
 
     const doSearch = async () => {
+      onSearchStateChange?.(true);
       try {
         const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
           searchTerm
@@ -172,7 +180,10 @@ function ExportController({
           },
         });
         const data: any[] = await resp.json();
-        if (!data.length) return;
+        if (!data.length) {
+          onSearchStateChange?.(false);
+          return;
+        }
 
         const first = data[0];
 
@@ -210,6 +221,8 @@ function ExportController({
         updateExportBounds(rect);
       } catch (err) {
         console.error("Search failed", err);
+      } finally {
+        onSearchStateChange?.(false);
       }
     };
 
@@ -229,6 +242,26 @@ function ExportController({
     updateExportBounds(newBounds);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalBBoxToken]);
+
+  // Handle sync to viewport (move rectangle to current map view)
+  useEffect(() => {
+    if (syncToViewportToken === undefined || syncToViewportToken === 0) return;
+
+    const viewportBounds = map.getBounds();
+    const sw = viewportBounds.getSouthWest();
+    const ne = viewportBounds.getNorthEast();
+
+    // Apply 20% padding (same as initial rectangle)
+    const padLat = (ne.lat - sw.lat) * 0.2;
+    const padLon = (ne.lng - sw.lng) * 0.2;
+
+    const rect = L.latLngBounds(
+      L.latLng(sw.lat + padLat, sw.lng + padLon),
+      L.latLng(ne.lat - padLat, ne.lng - padLon)
+    );
+    updateExportBounds(rect);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncToViewportToken]);
 
   const applyHandleDrag = (handle: HandleId, pos: LatLng) => {
     setBounds((prev) => {
@@ -355,6 +388,8 @@ export const MapView: React.FC<MapViewProps> = (props) => {
     >
       <TileLayer
         url="https://api.maptiler.com/maps/base-v4/{z}/{x}/{y}.png?key=TsSgpJiZhqkLRefl11Kl&language=en"
+        tileSize={512}
+        zoomOffset={-1}
       />
       <ExportController {...props} />
     </MapContainer>

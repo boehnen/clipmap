@@ -1,0 +1,9 @@
+{
+"type": "FeatureCollection",
+"name": "-170_25",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"xy_coordinate_resolution": 1e-15,
+"features": [
+{ "type": "Feature", "properties": { "FID": 126686, "id": 85, "left": -170.0, "top": 30.0, "right": -165.0, "bottom": 25.0, "row_index": 12, "col_index": 2, "min_lon": -170.0, "min_lat": 25.0, "tile_id": "-170_25" }, "geometry": { "type": "MultiPolygon", "coordinates": [ [ [ [ -168.0007377, 25.0001009 ], [ -168.0006378, 25.0003147 ], [ -168.0005266, 25.0003566 ], [ -168.000446, 25.0003481 ], [ -168.0004265, 25.0002508 ], [ -168.0004767, 25.0001092 ], [ -168.000483863520003, 25.0 ], [ -168.000745767390072, 25.0 ], [ -168.0007377, 25.0001009 ] ] ] ] } }
+]
+}

@@ -1,0 +1,9 @@
+{
+"type": "FeatureCollection",
+"name": "20_20",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"xy_coordinate_resolution": 1e-15,
+"features": [
+{ "type": "Feature", "properties": { "FID": 660342, "id": 1454, "left": 20.0, "top": 25.0, "right": 25.0, "bottom": 20.0, "row_index": 13, "col_index": 40, "min_lon": 20.0, "min_lat": 20.0, "tile_id": "20_20" }, "geometry": { "type": "MultiPolygon", "coordinates": [ [ [ [ 25.0, 25.0 ], [ 25.0, 20.0 ], [ 20.0, 20.0 ], [ 20.0, 25.0 ], [ 25.0, 25.0 ] ] ] ] } }
+]
+}

@@ -11,13 +11,14 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
     const durationMs = Number(end - start) / 1_000_000;
 
     const method = req.method;
-    const path = req.route?.path || req.originalUrl;
+    const path = req.originalUrl || req.path || "/";
     const status = res.statusCode;
 
     logger.info("http_request", {
       method,
       path,
       status,
+      requestId: req.requestId,
       durationMs: Math.round(durationMs * 10) / 10,
     });
 

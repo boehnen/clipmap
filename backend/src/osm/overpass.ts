@@ -14,7 +14,6 @@ export function computeDetailLevel(
   const latMid = (maxLat + minLat) / 2;
   const latMidRad = (latMid * Math.PI) / 180;
 
-  // Normalize lon span to something like "equivalent degrees at this latitude"
   const normalizedSpanDeg = Math.max(
     latSpan,
     Math.abs(lonSpan * Math.cos(latMidRad))
@@ -36,104 +35,67 @@ export function buildOverpassQuery(
     if (layer === "water") {
     let waterExpr: string;
 
-    if (detail === "fine") {
-      // Full detail: all water-ish things
-      waterExpr = `
-        way["natural"="water"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["natural"="water"](${minLat},${minLon},${maxLat},${maxLon});
+      if (detail === "fine") {
+        waterExpr = `
+          way["natural"="water"]["water"!="ocean"]["water"!="sea"](${minLat},${minLon},${maxLat},${maxLon});
+          relation["natural"="water"]["water"!="ocean"]["water"!="sea"](${minLat},${minLon},${maxLat},${maxLon});
 
-        way["waterway"="riverbank"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["waterway"="riverbank"](${minLat},${minLon},${maxLat},${maxLon});
+          way["waterway"="riverbank"](${minLat},${minLon},${maxLat},${maxLon});
+          relation["waterway"="riverbank"](${minLat},${minLon},${maxLat},${maxLon});
 
-        way["landuse"="reservoir"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["landuse"="reservoir"](${minLat},${minLon},${maxLat},${maxLon});
+          way["landuse"="reservoir"](${minLat},${minLon},${maxLat},${maxLon});
+          relation["landuse"="reservoir"](${minLat},${minLon},${maxLat},${maxLon});
 
-        way["wetland"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["wetland"](${minLat},${minLon},${maxLat},${maxLon});
+          way["landuse"="basin"](${minLat},${minLon},${maxLat},${maxLon});
+          relation["landuse"="basin"](${minLat},${minLon},${maxLat},${maxLon});
 
-        way["landuse"="basin"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["landuse"="basin"](${minLat},${minLon},${maxLat},${maxLon});
+          way["wetland"](${minLat},${minLon},${maxLat},${maxLon});
+          relation["wetland"](${minLat},${minLon},${maxLat},${maxLon});
+        `;
+      } else if (detail === "medium") {
+        waterExpr = `
+          way["natural"="water"]["water"!="ocean"]["water"!="sea"](${minLat},${minLon},${maxLat},${maxLon});
+          relation["natural"="water"]["water"!="ocean"]["water"!="sea"](${minLat},${minLon},${maxLat},${maxLon});
 
-        way["landuse"="harbour"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["landuse"="harbour"](${minLat},${minLon},${maxLat},${maxLon});
+          way["waterway"="riverbank"](${minLat},${minLon},${maxLat},${maxLon});
+          relation["waterway"="riverbank"](${minLat},${minLon},${maxLat},${maxLon});
 
-        way["harbour"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["harbour"](${minLat},${minLon},${maxLat},${maxLon});
+          way["landuse"="reservoir"](${minLat},${minLon},${maxLat},${maxLon});
+          relation["landuse"="reservoir"](${minLat},${minLon},${maxLat},${maxLon});
 
-        way["waterway"="dock"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["waterway"="dock"](${minLat},${minLon},${maxLat},${maxLon});
+          way["landuse"="basin"](${minLat},${minLon},${maxLat},${maxLon});
+          relation["landuse"="basin"](${minLat},${minLon},${maxLat},${maxLon});
+        `;
+      } else {
+        // Coarse detail: only major water bodies (lakes, large rivers, reservoirs)
+        // Skip small features like basins, wetlands that won't be visible
+        waterExpr = `
+          way["natural"="water"]["water"!="ocean"]["water"!="sea"](${minLat},${minLon},${maxLat},${maxLon});
+          relation["natural"="water"]["water"!="ocean"]["water"!="sea"](${minLat},${minLon},${maxLat},${maxLon});
 
-        way["natural"="bay"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["natural"="bay"](${minLat},${minLon},${maxLat},${maxLon});
+          way["waterway"="riverbank"](${minLat},${minLon},${maxLat},${maxLon});
+          relation["waterway"="riverbank"](${minLat},${minLon},${maxLat},${maxLon});
 
-        way["natural"="strait"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["natural"="strait"](${minLat},${minLon},${maxLat},${maxLon});
+          way["landuse"="reservoir"](${minLat},${minLon},${maxLat},${maxLon});
+          relation["landuse"="reservoir"](${minLat},${minLon},${maxLat},${maxLon});
+        `;
+      }
 
-        way["natural"="coastline"](${minLat},${minLon},${maxLat},${maxLon});
-      `;
-    } else if (detail === "medium") {
-      // Region / metro: keep major water bodies, drop small/“noisy” types
-      waterExpr = `
-        way["natural"="water"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["natural"="water"](${minLat},${minLon},${maxLat},${maxLon});
-
-        way["waterway"="riverbank"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["waterway"="riverbank"](${minLat},${minLon},${maxLat},${maxLon});
-
-        way["landuse"="reservoir"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["landuse"="reservoir"](${minLat},${minLon},${maxLat},${maxLon});
-
-        way["landuse"="basin"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["landuse"="basin"](${minLat},${minLon},${maxLat},${maxLon});
-
-        way["natural"="bay"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["natural"="bay"](${minLat},${minLon},${maxLat},${maxLon});
-
-        way["natural"="strait"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["natural"="strait"](${minLat},${minLon},${maxLat},${maxLon});
-
-        way["natural"="coastline"](${minLat},${minLon},${maxLat},${maxLon});
-      `;
-    } else {
-      // coarse: country/continent scale – only structural water features
-      waterExpr = `
-        way["natural"="water"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["natural"="water"](${minLat},${minLon},${maxLat},${maxLon});
-
-        way["waterway"="riverbank"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["waterway"="riverbank"](${minLat},${minLon},${maxLat},${maxLon});
-
-        way["landuse"="reservoir"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["landuse"="reservoir"](${minLat},${minLon},${maxLat},${maxLon});
-
-        way["landuse"="basin"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["landuse"="basin"](${minLat},${minLon},${maxLat},${maxLon});
-
-        way["natural"="bay"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["natural"="bay"](${minLat},${minLon},${maxLat},${maxLon});
-
-        way["natural"="strait"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["natural"="strait"](${minLat},${minLon},${maxLat},${maxLon});
-
-        way["natural"="coastline"](${minLat},${minLon},${maxLat},${maxLon});
+      return `
+        [out:json][timeout:25];
+        (
+          ${waterExpr}
+        );
+        (._;>;);
+        out body;
       `;
     }
 
-    return `
-      [out:json][timeout:25];
-      (
-        ${waterExpr}
-      );
-      (._;>;);
-      out body;
-    `;
-  }
 
     if (layer === "parks") {
     let parkExpr: string;
 
     if (detail === "fine") {
-      // Full detail: all the park/grass/playground/etc. you already had
       parkExpr = `
         way["leisure"="park"](${minLat},${minLon},${maxLat},${maxLon});
         relation["leisure"="park"](${minLat},${minLon},${maxLat},${maxLon});
@@ -169,7 +131,6 @@ export function buildOverpassQuery(
         relation["natural"="wood"](${minLat},${minLon},${maxLat},${maxLon});
       `;
     } else if (detail === "medium") {
-      // Region scale: drop hyper-local stuff (playgrounds, individual grass patches)
       parkExpr = `
         way["leisure"="park"](${minLat},${minLon},${maxLat},${maxLon});
         relation["leisure"="park"](${minLat},${minLon},${maxLat},${maxLon});
@@ -187,7 +148,6 @@ export function buildOverpassQuery(
         relation["natural"="wood"](${minLat},${minLon},${maxLat},${maxLon});
       `;
     } else {
-      // coarse: country scale – focus on large green masses and reserves
       parkExpr = `
         way["leisure"="park"](${minLat},${minLon},${maxLat},${maxLon});
         relation["leisure"="park"](${minLat},${minLon},${maxLat},${maxLon});
@@ -217,14 +177,11 @@ export function buildOverpassQuery(
     let placeFilter = "";
 
     if (detail === "fine") {
-      // all named places
       placeFilter = 'node["place"]["name"]';
     } else if (detail === "medium") {
-      // cities, towns, villages, plus some mid-scale labels
       placeFilter =
         'node["place"]["name"]["place"~"^(city|town|village|suburb|neighbourhood)$"]';
     } else {
-      // coarse: only big, context-setting labels
       placeFilter =
         'node["place"]["name"]["place"~"^(city|town|region|state|country)$"]';
     }
@@ -243,14 +200,11 @@ export function buildOverpassQuery(
   switch (layer) {
     case "roads":
       if (detail === "fine") {
-        // everything – good for city/neighborhood scale
         filterExpr = 'way["highway"]';
       } else if (detail === "medium") {
-        // major + residential/unclassified, drop the tiny stuff
         filterExpr =
           'way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|residential|unclassified)$"]';
       } else {
-        // coarse: only major through-routes
         filterExpr =
           'way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link)$"]';
       }
@@ -265,8 +219,15 @@ export function buildOverpassQuery(
       throw new Error(`buildOverpassQuery not implemented for layer ${layer}`);
   }
 
+  // Increase timeout for large extents (roads can be very dense)
+  const latSpan = Math.abs(maxLat - minLat);
+  const lonSpan = Math.abs(maxLon - minLon);
+  const maxSpan = Math.max(latSpan, lonSpan);
+  // Use longer timeout for larger extents (up to 60s for very large)
+  const timeout = maxSpan > 2.0 ? 60 : maxSpan > 1.0 ? 40 : 25;
+  
   return `
-    [out:json][timeout:25];
+    [out:json][timeout:${timeout}];
     (
       ${filterExpr}(${minLat},${minLon},${maxLat},${maxLon});
     );
@@ -301,12 +262,6 @@ export async function runOverpassQuery(query: string, layerLabel: string) {
     const endpoint = endpoints[attempt % endpoints.length];
 
     try {
-      logger.info("overpass_request", {
-        layer: layerLabel,
-        endpoint,
-        attempt,
-      });
-
       const resp = await fetchWithTimeout(
         endpoint,
         {
@@ -341,7 +296,7 @@ export async function runOverpassQuery(query: string, layerLabel: string) {
         attempt,
         error: err.message,
       });
-      metrics.recordOverpassRequest(layerLabel, endpoint, 599); // synthetic "network" status
+      metrics.recordOverpassRequest(layerLabel, endpoint, 599);
     }
   }
 

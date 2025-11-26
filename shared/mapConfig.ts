@@ -14,7 +14,7 @@ export const DETAIL_FINE_MAX_DEG = 1.0;
 export const DETAIL_MEDIUM_MAX_DEG = 5.0;
 
 // Absolute maximum normalized extent allowed (in degrees)
-export const MAX_EXTENT_DEG = 13.0;
+export const EXTENT_MAX_DEG = 4.0;
 
 // --- Helpers ---
 
@@ -53,5 +53,5 @@ export function computeDetailLevelFromBBox(bbox: BBoxLike): DetailLevel {
 }
 
 export function isExtentTooLarge(bbox: BBoxLike): boolean {
-  return computeNormalizedSpanDeg(bbox) > MAX_EXTENT_DEG;
+  return computeNormalizedSpanDeg(bbox) > EXTENT_MAX_DEG;
 }

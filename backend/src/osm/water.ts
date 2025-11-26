@@ -1,6 +1,9 @@
 // backend/src/osm/water.ts
 import { RawWay } from "../types";
-import { buildOverpassQuery, runOverpassQuery } from "./overpass";
+import { buildOverpassQuery, runOverpassQuery, computeDetailLevel } from "./overpass";
+import { splitBbox, shouldSplitBbox } from "./bboxSplitter";
+import { filterWaterBySize } from "./featureFilter";
+import { logger } from "../logger";
 
 function isWaterArea(tags: Record<string, string>): boolean {
   const natural = tags["natural"];
@@ -12,7 +15,7 @@ function isWaterArea(tags: Record<string, string>): boolean {
   const harbour = tags["harbour"];
 
   if (area === "yes") return true;
-  if (natural === "water") return true;
+  if (natural === "water" || natural === "sea") return true;
   if (landuse === "reservoir") return true;
   if (wetland) return true;
   if (waterway === "riverbank") return true;
@@ -94,8 +97,29 @@ function buildRingsFromSegments(
 export async function fetchWaterPolygons(
   bbox: [number, number, number, number]
 ): Promise<RawWay[]> {
-  const query = buildOverpassQuery(bbox, "water");
-  const data = await runOverpassQuery(query, "water");
+  // Split large bboxes into smaller chunks to avoid Overpass timeouts
+  // Use same logic as roads: split if latSpan > 2.5 or lonSpan > 2.5
+  const [minLat, minLon, maxLat, maxLon] = bbox;
+  const latSpan = maxLat - minLat;
+  const lonSpan = maxLon - minLon;
+  
+  let bboxes: [number, number, number, number][];
+  const shouldSplit = shouldSplitBbox(bbox) || latSpan > 2.5 || lonSpan > 2.5;
+  if (shouldSplit) {
+    // Use 1.5° chunks like roads for consistency
+    bboxes = splitBbox(bbox, 1.5);
+  } else {
+    bboxes = [bbox];
+  }
+  
+  const allPolygons: RawWay[] = [];
+  const waterIds = new Set<string>(); // Deduplicate by relation ID or geometry
+  
+  for (let i = 0; i < bboxes.length; i++) {
+    const chunk = bboxes[i];
+    try {
+      const query = buildOverpassQuery(chunk, "water");
+      const data = await runOverpassQuery(query, "water");
 
   const nodes = new Map<number, [number, number]>();
   const wayNodes = new Map<number, number[]>();
@@ -117,11 +141,11 @@ export async function fetchWaterPolygons(
     }
   }
 
-  const polygons: RawWay[] = [];
-  const usedWayIds = new Set<number>();
+      const polygons: RawWay[] = [];
+      const usedWayIds = new Set<number>();
 
-  // Multipolygons: treat outer and inner separately, with roles and relationId
-  for (const rel of relations) {
+      // Multipolygons: treat outer and inner separately, with roles and relationId
+      for (const rel of relations) {
     const tags: Record<string, string> = rel.tags || {};
     if (!isWaterArea(tags)) continue;
 
@@ -185,10 +209,35 @@ export async function fetchWaterPolygons(
     }
     if (coords.length < 3) continue;
 
-    const closedCoords = coordsClosed(coords);
-    polygons.push({ coords: closedCoords, tags });
-  }
+        const closedCoords = coordsClosed(coords);
+        polygons.push({ coords: closedCoords, tags });
+      }
 
-  console.log(`Built ${polygons.length} water polygons (with relations)`);
-  return polygons;
+      // Deduplicate: use relation ID or first coordinate as key
+      for (const poly of polygons) {
+        const key = poly.relationId 
+          ? `rel_${poly.relationId}`
+          : `coord_${poly.coords[0][0]}_${poly.coords[0][1]}`;
+        if (!waterIds.has(key)) {
+          waterIds.add(key);
+          allPolygons.push(poly);
+        }
+      }
+      
+    } catch (e: any) {
+      logger.warn("layer_chunk_failed", {
+        layer: "water",
+        chunk: i + 1,
+        error: e.message,
+      });
+      // Continue with other chunks
+    }
+  }
+  
+  // Filter by size based on detail level (like map zoom levels)
+  // At coarse detail, only show larger water bodies
+  const detail = computeDetailLevel(bbox);
+  const filtered = filterWaterBySize(allPolygons, bbox, detail);
+  
+  return filtered;
 }

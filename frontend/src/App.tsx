@@ -8,7 +8,7 @@ import type {
   LayerName,
   MapExportRequest,
 } from "./types";
-import { exportZip } from "./api";
+import { exportZipWithProgress, type ExportProgress } from "./api";
 import TutorialModal, {
   getDontShowTutorialFlag,
   setDontShowTutorialFlag,
@@ -27,7 +27,7 @@ const INITIAL_LAYERS: LayerConfig[] = [
 const KM_TO_MILES = 0.621371;
 const KM2_TO_MI2 = 0.386102;
 const EARTH_RADIUS_KM = 6371;
-const EXTENT_MAX_DEG = 13;
+const EXTENT_MAX_DEG = 4;
 
 // Simple haversine distance in km between two lat/lon points
 function haversineKm(
@@ -105,15 +105,20 @@ const App: React.FC = () => {
     null
   );
   const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [searchToken, setSearchToken] = useState(0);
+  const [isSearching, setIsSearching] = useState(false);
 
   // For programmatic rectangle updates (paste area)
   const [externalBBox, setExternalBBox] = useState<BBox | null>(null);
   const [externalBBoxToken, setExternalBBoxToken] = useState(0);
+  
+  // For syncing export rectangle to current viewport
+  const [syncToViewportToken, setSyncToViewportToken] = useState(0);
 
   const [copyState, setCopyState] = useState<"idle" | "success" | "error">("idle");
   const [pasteState, setPasteState] = useState<"idle" | "success" | "error">("idle");
@@ -164,7 +169,13 @@ const pasteLabel =
 
     try {
       setIsExporting(true);
-      const blob = await exportZip(payload);
+      setExportProgress({ step: "Starting...", progress: 0 });
+      setError(null);
+      
+      const blob = await exportZipWithProgress(payload, (progress) => {
+        setExportProgress(progress);
+      });
+      
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -173,9 +184,15 @@ const pasteLabel =
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      
+      // Show success briefly before clearing
+      setTimeout(() => {
+        setExportProgress(null);
+      }, 1000);
     } catch (e: any) {
       console.error(e);
       setError(e?.message || "Export failed");
+      setExportProgress(null);
     } finally {
       setIsExporting(false);
     }
@@ -351,6 +368,8 @@ const pasteLabel =
           searchToken={searchToken}
           externalBBox={externalBBox}
           externalBBoxToken={externalBBoxToken}
+          onSearchStateChange={setIsSearching}
+          syncToViewportToken={syncToViewportToken}
         />
       </div>
 
@@ -403,6 +422,7 @@ const pasteLabel =
             placeholder="Search place (city, address...)"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            disabled={isSearching}
             style={{
               flex: 1,
               fontSize: 12,
@@ -411,21 +431,24 @@ const pasteLabel =
               border: "1px solid #444",
               background: "#111",
               color: "#f5f5f5",
+              opacity: isSearching ? 0.6 : 1,
             }}
           />
           <button
             type="submit"
+            disabled={isSearching || !searchTerm.trim()}
             style={{
               fontSize: 12,
               padding: "6px 10px",
               borderRadius: 6,
               border: "none",
-              background: "#f5f5f5",
-              color: "#111",
-              cursor: "pointer",
+              background: isSearching || !searchTerm.trim() ? "#444" : "#f5f5f5",
+              color: isSearching || !searchTerm.trim() ? "#999" : "#111",
+              cursor: isSearching || !searchTerm.trim() ? "not-allowed" : "pointer",
+              minWidth: 50,
             }}
           >
-            Go
+            {isSearching ? "..." : "Go"}
           </button>
         </form>
 
@@ -484,7 +507,7 @@ const pasteLabel =
                     {areaMiles2.toFixed(1)} sq mi)
                   </>
                 )}
-                {exportRegion.isTooBig && " — too large (shrink the box)"}
+                {exportRegion.isTooBig && " — too large"}
               </div>
 
               {detailLevelLabel && (
@@ -512,6 +535,7 @@ const pasteLabel =
                   marginTop: 6,
                   display: "flex",
                   gap: 6,
+                  flexWrap: "wrap",
                 }}
               >
                 <button
@@ -567,6 +591,24 @@ const pasteLabel =
                 >
                   {pasteLabel}
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSyncToViewportToken((t) => t + 1)}
+                  style={{
+                    fontSize: 11,
+                    padding: "3px 8px",
+                    borderRadius: 999,
+                    border: "1px solid #444",
+                    background: "#222",
+                    color: "#eee",
+                    cursor: "pointer",
+                    transition: "background 120ms ease",
+                  }}
+                  title="Move export rectangle to current map view"
+                >
+                  Sync to view
+                </button>
               </div>
             </>
           ) : (
@@ -579,24 +621,50 @@ const pasteLabel =
           <button
             type="button"
             onClick={handleExport}
-            disabled={disabled}
+            disabled={disabled || isExporting}
             style={{
               padding: "8px 12px",
               fontSize: 13,
               fontWeight: 600,
-              background: disabled ? "#444" : "#f5f5f5",
-              color: disabled ? "#999" : "#111",
+              background: disabled || isExporting ? "#444" : "#f5f5f5",
+              color: disabled || isExporting ? "#999" : "#111",
               borderRadius: 6,
               border: "none",
-              cursor: disabled ? "not-allowed" : "pointer",
+              cursor: disabled || isExporting ? "not-allowed" : "pointer",
               width: "100%",
+              position: "relative",
+              overflow: "hidden",
             }}
           >
-            {isExporting
-              ? "Exporting…"
-              : `Export ${visibleLayerNames.length} layer${
-                  visibleLayerNames.length === 1 ? "" : "s"
-                } as ZIP`}
+            {isExporting && exportProgress ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
+                <div style={{ fontSize: 12, width: "100%", textAlign: "left" }}>
+                  {exportProgress.step}
+                </div>
+                <div
+                  style={{
+                    width: "100%",
+                    height: 4,
+                    background: "rgba(0,0,0,0.2)",
+                    borderRadius: 2,
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${exportProgress.progress || 0}%`,
+                      height: "100%",
+                      background: "#4caf50",
+                      transition: "width 0.3s ease",
+                    }}
+                  />
+                </div>
+              </div>
+            ) : (
+              `Export ${visibleLayerNames.length} layer${
+                visibleLayerNames.length === 1 ? "" : "s"
+              } as ZIP`
+            )}
           </button>
           {error && (
             <div style={{ color: "#ff8a80", fontSize: 11, marginTop: 6 }}>

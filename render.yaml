@@ -1,0 +1,33 @@
+# Render.com configuration
+# Deploy by connecting GitHub repo to Render
+
+services:
+  # Backend API
+  - type: web
+    name: clipmap-backend
+    env: node
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: LOG_LEVEL
+        value: info
+      - key: CORS_ORIGINS
+        sync: false  # Set manually in Render dashboard
+    plan: free  # Change to 'starter' ($7/month) for always-on
+
+  # Frontend Static Site
+  - type: web
+    name: clipmap-frontend
+    env: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false  # Set to backend URL in Render dashboard
+
