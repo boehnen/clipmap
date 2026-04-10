@@ -103,6 +103,10 @@ backend/*.log
 backend/build/
 backend/dist/
 
+# Tile data (served from R2/CDN, not bundled in repo)
+backend/src/data/base/land-tiles/
+backend/src/data/base/water-tiles/
+
 # -----------------------------------------------------
 # OS TEMP FILES
 # -----------------------------------------------------
@@ -118,3 +122,25 @@ backend/dist/
 *.orig
 *.rej
 *.backup
+
+# -----------------------------------------------------
+# TILE GENERATION (scripts/tile-work)
+# -----------------------------------------------------
+# Large data files
+*.gpkg
+*.shp
+*.shx
+*.dbf
+*.prj
+*.geojson
+
+# Tile directories (generated data)
+scripts/tile-work/land-tiles-new/
+scripts/tile-work/water-tiles/
+scripts/tile-work/water-tiles-v3/
+scripts/tile-work/world-tiles/
+scripts/tile-work/lod-sources-clean/
+scripts/tile-work/node_modules/
+
+# Source data (can be re-downloaded)
+scripts/tile-work/*.zip

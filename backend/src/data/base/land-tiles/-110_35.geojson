@@ -1,9 +1,0 @@
-{
-"type": "FeatureCollection",
-"name": "-110_35",
-"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
-"xy_coordinate_resolution": 1e-15,
-"features": [
-{ "type": "Feature", "properties": { "FID": 537252, "id": 515, "left": -110.0, "top": 40.0, "right": -105.0, "bottom": 35.0, "row_index": 10, "col_index": 14, "min_lon": -110.0, "min_lat": 35.0, "tile_id": "-110_35" }, "geometry": { "type": "MultiPolygon", "coordinates": [ [ [ [ -105.0, 40.0 ], [ -105.0, 35.0 ], [ -110.0, 35.0 ], [ -110.0, 40.0 ], [ -105.0, 40.0 ] ] ] ] } }
-]
-}
