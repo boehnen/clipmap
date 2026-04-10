@@ -10,23 +10,34 @@ import { BBox } from '@/types';
 import { projectPoint } from '../geo/project';
 import { GeoJSONFeature, GeoJSONFeatureCollection } from './tileLoader';
 
-// R2 CDN URL for water tiles
-const WATER_TILES_CDN = process.env.NEXT_PUBLIC_WATER_TILES_CDN ||
+// R2 CDN URL for tiles
+const TILES_CDN = process.env.NEXT_PUBLIC_TILE_CDN_URL ||
   'https://cdn.clipmap.io';
 
-// LOD levels for water tiles
-// Note: Only 2.5deg water tiles are on CDN currently
-// Other LODs return empty (no water in those tiles = full land)
+// LOD levels for water tiles (finest to coarsest)
+// Selects based on normalized bbox span
 const WATER_LODS = [
-  { folder: 'water-tiles-2.5deg', tileSize: 2.5, maxSpan: Infinity },
+  { folder: 'water-tiles-1deg', tileSize: 1, maxSpan: 2 },
+  { folder: 'water-tiles-2.5deg', tileSize: 2.5, maxSpan: 6 },
+  { folder: 'water-tiles-5deg', tileSize: 5, maxSpan: 15 },
+  { folder: 'water-tiles-10deg', tileSize: 10, maxSpan: 35 },
+  { folder: 'water-tiles-20deg', tileSize: 20, maxSpan: Infinity },
 ];
 
-// In-memory tile cache
+// In-memory tile cache (includes 404s as empty arrays)
 const waterTileCache = new Map<string, MultiPolygonMercator>();
-const CACHE_MAX_SIZE = 200;
+const CACHE_MAX_SIZE = 500;
 
 // Pending fetches to prevent duplicate requests
 const pendingFetches = new Map<string, Promise<MultiPolygonMercator | null>>();
+
+function cacheResult(url: string, mp: MultiPolygonMercator): void {
+  if (waterTileCache.size >= CACHE_MAX_SIZE) {
+    const firstKey = waterTileCache.keys().next().value;
+    if (firstKey) waterTileCache.delete(firstKey);
+  }
+  waterTileCache.set(url, mp);
+}
 
 // Types
 type Ring = [number, number][];
@@ -63,8 +74,13 @@ function selectTileSize(bboxSpan: number): number {
 
 /**
  * Get tile start coordinate (snap to tile grid)
+ * For 20deg tiles, latitude uses offset grid (10, 30, 50... not 0, 20, 40...)
  */
-function tileStart(value: number, tileSize: number): number {
+function tileStart(value: number, tileSize: number, isLatitude: boolean = false): number {
+  if (tileSize === 20 && isLatitude) {
+    // 20deg latitude tiles are offset by 10: -90, -70, -50, -30, -10, 10, 30, 50, 70
+    return Math.floor((value - 10) / 20) * 20 + 10;
+  }
   return Math.floor(value / tileSize) * tileSize;
 }
 
@@ -89,10 +105,10 @@ function formatCoord(val: number, tileSize: number): string {
 function getTileIds(bbox: BBox, tileSize: number): string[] {
   const { minLat, minLon, maxLat, maxLon } = bbox;
 
-  const startLon = tileStart(minLon, tileSize);
-  const endLon = tileStart(maxLon - 1e-9, tileSize);
-  const startLat = tileStart(minLat, tileSize);
-  const endLat = tileStart(maxLat - 1e-9, tileSize);
+  const startLon = tileStart(minLon, tileSize, false);
+  const endLon = tileStart(maxLon - 1e-9, tileSize, false);
+  const startLat = tileStart(minLat, tileSize, true);
+  const endLat = tileStart(maxLat - 1e-9, tileSize, true);
 
   const ids: string[] = [];
   for (let lat = startLat; lat <= endLat; lat += tileSize) {
@@ -154,7 +170,8 @@ async function fetchWaterTile(url: string): Promise<MultiPolygonMercator | null>
       const response = await fetch(url);
       if (!response.ok) {
         if (response.status === 404) {
-          // Tile doesn't exist (empty ocean/land area)
+          // Cache 404 as empty array to avoid re-fetching
+          cacheResult(url, []);
           return null;
         }
         throw new Error(`HTTP ${response.status}`);
@@ -162,14 +179,7 @@ async function fetchWaterTile(url: string): Promise<MultiPolygonMercator | null>
 
       const data = await response.json() as GeoJSONFeatureCollection;
       const mp = parseGeoJSONToMercator(data);
-
-      // Cache the result
-      if (waterTileCache.size >= CACHE_MAX_SIZE) {
-        // Remove oldest entry
-        const firstKey = waterTileCache.keys().next().value;
-        if (firstKey) waterTileCache.delete(firstKey);
-      }
-      waterTileCache.set(url, mp);
+      cacheResult(url, mp);
 
       return mp.length ? mp : null;
     } catch (err) {
@@ -201,10 +211,9 @@ export async function loadWaterTiles(bbox: BBox): Promise<MultiPolygonMercator> 
 
   const tileIds = getTileIds(bbox, tileSize);
 
-  console.log(`Loading water tiles: ${tileIds.length} tiles @ ${lod.folder} (span: ${bboxSpan.toFixed(1)}°)`);
 
   // Fetch all tiles in parallel
-  const tileUrls = tileIds.map(id => `${WATER_TILES_CDN}/${lod.folder}/${id}.geojson`);
+  const tileUrls = tileIds.map(id => `${TILES_CDN}/${lod.folder}/${id}.geojson`);
   const tileResults = await Promise.all(tileUrls.map(url => fetchWaterTile(url)));
 
   // Combine all polygons
@@ -215,7 +224,6 @@ export async function loadWaterTiles(bbox: BBox): Promise<MultiPolygonMercator> 
     }
   }
 
-  console.log(`Water tiles loaded: ${allPolygons.length} polygons`);
   return allPolygons;
 }
 

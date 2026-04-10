@@ -11,25 +11,34 @@ import { projectPoint } from '../geo/project';
 import { GeoJSONFeatureCollection } from './tileLoader';
 
 // R2 CDN URL for tiles
-const TILES_CDN = process.env.NEXT_PUBLIC_WATER_TILES_CDN ||
+const TILES_CDN = process.env.NEXT_PUBLIC_TILE_CDN_URL ||
   'https://cdn.clipmap.io';
 
-// LOD levels for land tiles
-// Note: 1deg tiles not yet generated
+// LOD levels for land tiles (finest to coarsest)
+// Selects based on normalized bbox span
 // 20deg tiles use offset latitude grid (10, 30, 50... not 0, 20, 40...)
 const LAND_LODS = [
-  { folder: 'land-tiles-2.5deg', tileSize: 2.5, maxSpan: 5 },
-  { folder: 'land-tiles-5deg', tileSize: 5, maxSpan: 12 },
-  { folder: 'land-tiles-10deg', tileSize: 10, maxSpan: 30 },
+  { folder: 'land-tiles-1deg', tileSize: 1, maxSpan: 2 },
+  { folder: 'land-tiles-2.5deg', tileSize: 2.5, maxSpan: 6 },
+  { folder: 'land-tiles-5deg', tileSize: 5, maxSpan: 15 },
+  { folder: 'land-tiles-10deg', tileSize: 10, maxSpan: 35 },
   { folder: 'land-tiles-20deg', tileSize: 20, maxSpan: Infinity },
 ];
 
-// In-memory tile cache
+// In-memory tile cache (includes 404s as empty arrays)
 const landTileCache = new Map<string, MultiPolygonMercator>();
-const CACHE_MAX_SIZE = 200;
+const CACHE_MAX_SIZE = 500;
 
 // Pending fetches to prevent duplicate requests
 const pendingFetches = new Map<string, Promise<MultiPolygonMercator | null>>();
+
+function cacheResult(url: string, mp: MultiPolygonMercator): void {
+  if (landTileCache.size >= CACHE_MAX_SIZE) {
+    const firstKey = landTileCache.keys().next().value;
+    if (firstKey) landTileCache.delete(firstKey);
+  }
+  landTileCache.set(url, mp);
+}
 
 // Types
 type Ring = [number, number][];
@@ -162,7 +171,8 @@ async function fetchLandTile(url: string): Promise<MultiPolygonMercator | null> 
       const response = await fetch(url);
       if (!response.ok) {
         if (response.status === 404) {
-          // Tile doesn't exist = full water, no land
+          // Cache 404 as empty array to avoid re-fetching
+          cacheResult(url, []);
           return null;
         }
         throw new Error(`HTTP ${response.status}`);
@@ -170,13 +180,7 @@ async function fetchLandTile(url: string): Promise<MultiPolygonMercator | null> 
 
       const data = await response.json() as GeoJSONFeatureCollection;
       const mp = parseGeoJSONToMercator(data);
-
-      // Cache the result
-      if (landTileCache.size >= CACHE_MAX_SIZE) {
-        const firstKey = landTileCache.keys().next().value;
-        if (firstKey) landTileCache.delete(firstKey);
-      }
-      landTileCache.set(url, mp);
+      cacheResult(url, mp);
 
       return mp.length ? mp : null;
     } catch (err) {
@@ -208,7 +212,6 @@ export async function loadLandTiles(bbox: BBox): Promise<MultiPolygonMercator> {
 
   const tileIds = getTileIds(bbox, tileSize);
 
-  console.log(`Loading land tiles: ${tileIds.length} tiles @ ${lod.folder} (span: ${bboxSpan.toFixed(1)}°)`);
 
   // Fetch all tiles in parallel (direct paths to /land-tiles-{lod}/)
   const tileUrls = tileIds.map(id => `${TILES_CDN}/${lod.folder}/${id}.geojson`);
@@ -222,7 +225,6 @@ export async function loadLandTiles(bbox: BBox): Promise<MultiPolygonMercator> {
     }
   }
 
-  console.log(`Land tiles loaded: ${allPolygons.length} polygons`);
   return allPolygons;
 }
 

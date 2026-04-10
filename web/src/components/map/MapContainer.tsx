@@ -6,7 +6,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { BBox, LayerName } from '@/types';
 import { LayerStyle, OutputMode } from '@/types/makerPresets';
-import { PreviewCanvas } from './PreviewCanvas';
+import { SvgPreview } from './SvgPreview';
 
 // Handle icons
 const handleIcon = L.divIcon({
@@ -44,10 +44,14 @@ function MapController({
   onBoundsChange,
   bounds,
   setBounds,
+  onDragStart,
+  onDragEnd,
 }: {
   onBoundsChange?: (bbox: BBox) => void;
   bounds: L.LatLngBounds | null;
   setBounds: (b: L.LatLngBounds) => void;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }) {
   const map = useMap();
   const initializedRef = useRef(false);
@@ -169,10 +173,12 @@ function MapController({
           icon={id === 'center' ? centerHandleIcon : handleIcon}
           draggable
           eventHandlers={{
+            dragstart: () => onDragStart?.(),
             drag: (e) => {
               const marker = e.target as L.Marker;
               applyHandleDrag(id as HandleId, marker.getLatLng());
             },
+            dragend: () => onDragEnd?.(),
           }}
         />
       ))}
@@ -444,6 +450,7 @@ export function MapContainer({
 }: MapContainerProps) {
   const [bounds, setBounds] = useState<L.LatLngBounds | null>(null);
   const [currentBbox, setCurrentBbox] = useState<BBox | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Track current bbox for preview
   useEffect(() => {
@@ -476,17 +483,17 @@ export function MapContainer({
           onBoundsChange={onBoundsChange}
           bounds={bounds}
           setBounds={setBounds}
+          onDragStart={() => setIsDragging(true)}
+          onDragEnd={() => setIsDragging(false)}
         />
         <ExternalBoundsHandler externalBounds={externalBounds} setBounds={setBounds} />
         <SearchControl onSearch={() => {}} />
         <MapControls bounds={bounds} setBounds={setBounds} onPaste={onPaste} />
-        {showPreview && layerStyles && (
-          <PreviewCanvas
+        {layerStyles && (
+          <SvgPreview
             bbox={currentBbox}
             layerStyles={layerStyles}
-            outputMode={outputMode}
-            enabled={showPreview}
-            opacity={previewOpacity}
+            enabled={showPreview && !isDragging}
           />
         )}
       </LeafletMapContainer>
