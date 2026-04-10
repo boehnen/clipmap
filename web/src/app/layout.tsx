@@ -1,12 +1,10 @@
 import type { Metadata } from 'next';
-import { Header } from '@/components/layout/Header';
-import { Footer } from '@/components/layout/Footer';
-import { JsonLd } from '@/components/seo/JsonLd';
-import { createWebsiteSchema, createOrganizationSchema } from '@/lib/seo/structured-data';
-import { defaultMetadata } from '@/lib/seo/metadata';
 import '@/styles/globals.css';
 
-export const metadata: Metadata = defaultMetadata;
+export const metadata: Metadata = {
+  title: 'ClipMap - Custom Maps for Makers',
+  description: 'Generate SVG maps for laser cutting, CNC, and wall art. Select any location, choose layers, download instantly.',
+};
 
 export default function RootLayout({
   children,
@@ -16,15 +14,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <link rel="preconnect" href="https://tile.openstreetmap.org" />
-        <link rel="dns-prefetch" href="https://pagead2.googlesyndication.com" />
-        <JsonLd data={createWebsiteSchema()} />
-        <JsonLd data={createOrganizationSchema()} />
+        <link rel="preconnect" href="https://cdn.clipmap.io" />
       </head>
-      <body className="min-h-screen flex flex-col">
-        <Header />
-        <main className="flex-1">{children}</main>
-        <Footer />
+      <body className="h-screen overflow-hidden">
+        {children}
       </body>
     </html>
   );
