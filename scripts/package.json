@@ -1,0 +1,23 @@
+{
+  "name": "clipmap-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tile generation and utility scripts for ClipMap",
+  "scripts": {
+    "generate-tiles": "npx ts-node generate-tiles-node.ts",
+    "upload-tiles": "npx ts-node upload-tiles-r2.ts",
+    "generate-elevation": "python qgis/generate_elevation_index.py"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.500.0",
+    "dotenv": "^16.3.1",
+    "osm-pbf-parser": "^0.1.0",
+    "through2": "^4.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/through2": "^2.0.41",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0"
+  }
+}

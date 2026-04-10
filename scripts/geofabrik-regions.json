@@ -1,0 +1,151 @@
+{
+  "description": "Geofabrik subregions for complete global coverage. Subregions don't overlap and together equal parent.",
+  "source": "https://download.geofabrik.de/",
+  "regions": [
+    {
+      "continent": "africa",
+      "note": "Use continent file - most countries are small",
+      "regions": [
+        { "name": "africa", "url": "https://download.geofabrik.de/africa-latest.osm.pbf", "size_mb": 6000 }
+      ]
+    },
+    {
+      "continent": "antarctica",
+      "regions": [
+        { "name": "antarctica", "url": "https://download.geofabrik.de/antarctica-latest.osm.pbf", "size_mb": 30 }
+      ]
+    },
+    {
+      "continent": "asia",
+      "note": "Split into subregions for manageability",
+      "regions": [
+        { "name": "afghanistan", "url": "https://download.geofabrik.de/asia/afghanistan-latest.osm.pbf", "size_mb": 100 },
+        { "name": "bangladesh", "url": "https://download.geofabrik.de/asia/bangladesh-latest.osm.pbf", "size_mb": 150 },
+        { "name": "bhutan", "url": "https://download.geofabrik.de/asia/bhutan-latest.osm.pbf", "size_mb": 10 },
+        { "name": "cambodia", "url": "https://download.geofabrik.de/asia/cambodia-latest.osm.pbf", "size_mb": 50 },
+        { "name": "china", "url": "https://download.geofabrik.de/asia/china-latest.osm.pbf", "size_mb": 1200 },
+        { "name": "gcc-states", "url": "https://download.geofabrik.de/asia/gcc-states-latest.osm.pbf", "size_mb": 400 },
+        { "name": "india", "url": "https://download.geofabrik.de/asia/india-latest.osm.pbf", "size_mb": 1100 },
+        { "name": "indonesia", "url": "https://download.geofabrik.de/asia/indonesia-latest.osm.pbf", "size_mb": 800 },
+        { "name": "iran", "url": "https://download.geofabrik.de/asia/iran-latest.osm.pbf", "size_mb": 200 },
+        { "name": "iraq", "url": "https://download.geofabrik.de/asia/iraq-latest.osm.pbf", "size_mb": 100 },
+        { "name": "israel-and-palestine", "url": "https://download.geofabrik.de/asia/israel-and-palestine-latest.osm.pbf", "size_mb": 150 },
+        { "name": "japan", "url": "https://download.geofabrik.de/asia/japan-latest.osm.pbf", "size_mb": 2000 },
+        { "name": "jordan", "url": "https://download.geofabrik.de/asia/jordan-latest.osm.pbf", "size_mb": 50 },
+        { "name": "kazakhstan", "url": "https://download.geofabrik.de/asia/kazakhstan-latest.osm.pbf", "size_mb": 300 },
+        { "name": "kyrgyzstan", "url": "https://download.geofabrik.de/asia/kyrgyzstan-latest.osm.pbf", "size_mb": 50 },
+        { "name": "laos", "url": "https://download.geofabrik.de/asia/laos-latest.osm.pbf", "size_mb": 30 },
+        { "name": "lebanon", "url": "https://download.geofabrik.de/asia/lebanon-latest.osm.pbf", "size_mb": 50 },
+        { "name": "malaysia-singapore-brunei", "url": "https://download.geofabrik.de/asia/malaysia-singapore-brunei-latest.osm.pbf", "size_mb": 300 },
+        { "name": "maldives", "url": "https://download.geofabrik.de/asia/maldives-latest.osm.pbf", "size_mb": 5 },
+        { "name": "mongolia", "url": "https://download.geofabrik.de/asia/mongolia-latest.osm.pbf", "size_mb": 50 },
+        { "name": "myanmar", "url": "https://download.geofabrik.de/asia/myanmar-latest.osm.pbf", "size_mb": 100 },
+        { "name": "nepal", "url": "https://download.geofabrik.de/asia/nepal-latest.osm.pbf", "size_mb": 100 },
+        { "name": "north-korea", "url": "https://download.geofabrik.de/asia/north-korea-latest.osm.pbf", "size_mb": 30 },
+        { "name": "pakistan", "url": "https://download.geofabrik.de/asia/pakistan-latest.osm.pbf", "size_mb": 200 },
+        { "name": "philippines", "url": "https://download.geofabrik.de/asia/philippines-latest.osm.pbf", "size_mb": 400 },
+        { "name": "russia", "url": "https://download.geofabrik.de/russia-latest.osm.pbf", "size_mb": 3500 },
+        { "name": "south-korea", "url": "https://download.geofabrik.de/asia/south-korea-latest.osm.pbf", "size_mb": 600 },
+        { "name": "sri-lanka", "url": "https://download.geofabrik.de/asia/sri-lanka-latest.osm.pbf", "size_mb": 50 },
+        { "name": "syria", "url": "https://download.geofabrik.de/asia/syria-latest.osm.pbf", "size_mb": 80 },
+        { "name": "taiwan", "url": "https://download.geofabrik.de/asia/taiwan-latest.osm.pbf", "size_mb": 150 },
+        { "name": "tajikistan", "url": "https://download.geofabrik.de/asia/tajikistan-latest.osm.pbf", "size_mb": 30 },
+        { "name": "thailand", "url": "https://download.geofabrik.de/asia/thailand-latest.osm.pbf", "size_mb": 300 },
+        { "name": "turkmenistan", "url": "https://download.geofabrik.de/asia/turkmenistan-latest.osm.pbf", "size_mb": 30 },
+        { "name": "uzbekistan", "url": "https://download.geofabrik.de/asia/uzbekistan-latest.osm.pbf", "size_mb": 80 },
+        { "name": "vietnam", "url": "https://download.geofabrik.de/asia/vietnam-latest.osm.pbf", "size_mb": 150 },
+        { "name": "yemen", "url": "https://download.geofabrik.de/asia/yemen-latest.osm.pbf", "size_mb": 30 }
+      ]
+    },
+    {
+      "continent": "australia-oceania",
+      "regions": [
+        { "name": "australia", "url": "https://download.geofabrik.de/australia-oceania/australia-latest.osm.pbf", "size_mb": 900 },
+        { "name": "fiji", "url": "https://download.geofabrik.de/australia-oceania/fiji-latest.osm.pbf", "size_mb": 10 },
+        { "name": "new-caledonia", "url": "https://download.geofabrik.de/australia-oceania/new-caledonia-latest.osm.pbf", "size_mb": 10 },
+        { "name": "new-zealand", "url": "https://download.geofabrik.de/australia-oceania/new-zealand-latest.osm.pbf", "size_mb": 150 },
+        { "name": "papua-new-guinea", "url": "https://download.geofabrik.de/australia-oceania/papua-new-guinea-latest.osm.pbf", "size_mb": 30 }
+      ]
+    },
+    {
+      "continent": "central-america",
+      "regions": [
+        { "name": "central-america", "url": "https://download.geofabrik.de/central-america-latest.osm.pbf", "size_mb": 600 }
+      ]
+    },
+    {
+      "continent": "europe",
+      "note": "Split by country - Europe is very detailed",
+      "regions": [
+        { "name": "albania", "url": "https://download.geofabrik.de/europe/albania-latest.osm.pbf", "size_mb": 50 },
+        { "name": "andorra", "url": "https://download.geofabrik.de/europe/andorra-latest.osm.pbf", "size_mb": 5 },
+        { "name": "austria", "url": "https://download.geofabrik.de/europe/austria-latest.osm.pbf", "size_mb": 700 },
+        { "name": "azores", "url": "https://download.geofabrik.de/europe/azores-latest.osm.pbf", "size_mb": 10 },
+        { "name": "belarus", "url": "https://download.geofabrik.de/europe/belarus-latest.osm.pbf", "size_mb": 300 },
+        { "name": "belgium", "url": "https://download.geofabrik.de/europe/belgium-latest.osm.pbf", "size_mb": 500 },
+        { "name": "bosnia-herzegovina", "url": "https://download.geofabrik.de/europe/bosnia-herzegovina-latest.osm.pbf", "size_mb": 100 },
+        { "name": "bulgaria", "url": "https://download.geofabrik.de/europe/bulgaria-latest.osm.pbf", "size_mb": 200 },
+        { "name": "croatia", "url": "https://download.geofabrik.de/europe/croatia-latest.osm.pbf", "size_mb": 200 },
+        { "name": "cyprus", "url": "https://download.geofabrik.de/europe/cyprus-latest.osm.pbf", "size_mb": 50 },
+        { "name": "czech-republic", "url": "https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf", "size_mb": 700 },
+        { "name": "denmark", "url": "https://download.geofabrik.de/europe/denmark-latest.osm.pbf", "size_mb": 400 },
+        { "name": "estonia", "url": "https://download.geofabrik.de/europe/estonia-latest.osm.pbf", "size_mb": 150 },
+        { "name": "faroe-islands", "url": "https://download.geofabrik.de/europe/faroe-islands-latest.osm.pbf", "size_mb": 5 },
+        { "name": "finland", "url": "https://download.geofabrik.de/europe/finland-latest.osm.pbf", "size_mb": 500 },
+        { "name": "france", "url": "https://download.geofabrik.de/europe/france-latest.osm.pbf", "size_mb": 4500 },
+        { "name": "georgia", "url": "https://download.geofabrik.de/europe/georgia-latest.osm.pbf", "size_mb": 100 },
+        { "name": "germany", "url": "https://download.geofabrik.de/europe/germany-latest.osm.pbf", "size_mb": 4000 },
+        { "name": "great-britain", "url": "https://download.geofabrik.de/europe/great-britain-latest.osm.pbf", "size_mb": 1500 },
+        { "name": "greece", "url": "https://download.geofabrik.de/europe/greece-latest.osm.pbf", "size_mb": 400 },
+        { "name": "hungary", "url": "https://download.geofabrik.de/europe/hungary-latest.osm.pbf", "size_mb": 300 },
+        { "name": "iceland", "url": "https://download.geofabrik.de/europe/iceland-latest.osm.pbf", "size_mb": 50 },
+        { "name": "ireland-and-northern-ireland", "url": "https://download.geofabrik.de/europe/ireland-and-northern-ireland-latest.osm.pbf", "size_mb": 250 },
+        { "name": "isle-of-man", "url": "https://download.geofabrik.de/europe/isle-of-man-latest.osm.pbf", "size_mb": 10 },
+        { "name": "italy", "url": "https://download.geofabrik.de/europe/italy-latest.osm.pbf", "size_mb": 2000 },
+        { "name": "kosovo", "url": "https://download.geofabrik.de/europe/kosovo-latest.osm.pbf", "size_mb": 50 },
+        { "name": "latvia", "url": "https://download.geofabrik.de/europe/latvia-latest.osm.pbf", "size_mb": 150 },
+        { "name": "liechtenstein", "url": "https://download.geofabrik.de/europe/liechtenstein-latest.osm.pbf", "size_mb": 5 },
+        { "name": "lithuania", "url": "https://download.geofabrik.de/europe/lithuania-latest.osm.pbf", "size_mb": 200 },
+        { "name": "luxembourg", "url": "https://download.geofabrik.de/europe/luxembourg-latest.osm.pbf", "size_mb": 50 },
+        { "name": "malta", "url": "https://download.geofabrik.de/europe/malta-latest.osm.pbf", "size_mb": 20 },
+        { "name": "moldova", "url": "https://download.geofabrik.de/europe/moldova-latest.osm.pbf", "size_mb": 80 },
+        { "name": "monaco", "url": "https://download.geofabrik.de/europe/monaco-latest.osm.pbf", "size_mb": 2 },
+        { "name": "montenegro", "url": "https://download.geofabrik.de/europe/montenegro-latest.osm.pbf", "size_mb": 30 },
+        { "name": "netherlands", "url": "https://download.geofabrik.de/europe/netherlands-latest.osm.pbf", "size_mb": 1200 },
+        { "name": "north-macedonia", "url": "https://download.geofabrik.de/europe/north-macedonia-latest.osm.pbf", "size_mb": 60 },
+        { "name": "norway", "url": "https://download.geofabrik.de/europe/norway-latest.osm.pbf", "size_mb": 600 },
+        { "name": "poland", "url": "https://download.geofabrik.de/europe/poland-latest.osm.pbf", "size_mb": 1500 },
+        { "name": "portugal", "url": "https://download.geofabrik.de/europe/portugal-latest.osm.pbf", "size_mb": 300 },
+        { "name": "romania", "url": "https://download.geofabrik.de/europe/romania-latest.osm.pbf", "size_mb": 400 },
+        { "name": "serbia", "url": "https://download.geofabrik.de/europe/serbia-latest.osm.pbf", "size_mb": 200 },
+        { "name": "slovakia", "url": "https://download.geofabrik.de/europe/slovakia-latest.osm.pbf", "size_mb": 250 },
+        { "name": "slovenia", "url": "https://download.geofabrik.de/europe/slovenia-latest.osm.pbf", "size_mb": 150 },
+        { "name": "spain", "url": "https://download.geofabrik.de/europe/spain-latest.osm.pbf", "size_mb": 1200 },
+        { "name": "sweden", "url": "https://download.geofabrik.de/europe/sweden-latest.osm.pbf", "size_mb": 700 },
+        { "name": "switzerland", "url": "https://download.geofabrik.de/europe/switzerland-latest.osm.pbf", "size_mb": 500 },
+        { "name": "turkey", "url": "https://download.geofabrik.de/europe/turkey-latest.osm.pbf", "size_mb": 500 },
+        { "name": "ukraine", "url": "https://download.geofabrik.de/europe/ukraine-latest.osm.pbf", "size_mb": 800 }
+      ]
+    },
+    {
+      "continent": "north-america",
+      "note": "USA split by state, Canada and Mexico as whole",
+      "regions": [
+        { "name": "canada", "url": "https://download.geofabrik.de/north-america/canada-latest.osm.pbf", "size_mb": 3000 },
+        { "name": "greenland", "url": "https://download.geofabrik.de/north-america/greenland-latest.osm.pbf", "size_mb": 20 },
+        { "name": "mexico", "url": "https://download.geofabrik.de/north-america/mexico-latest.osm.pbf", "size_mb": 700 },
+        { "name": "us-midwest", "url": "https://download.geofabrik.de/north-america/us-midwest-latest.osm.pbf", "size_mb": 2500 },
+        { "name": "us-northeast", "url": "https://download.geofabrik.de/north-america/us-northeast-latest.osm.pbf", "size_mb": 1800 },
+        { "name": "us-pacific", "url": "https://download.geofabrik.de/north-america/us-pacific-latest.osm.pbf", "size_mb": 200 },
+        { "name": "us-south", "url": "https://download.geofabrik.de/north-america/us-south-latest.osm.pbf", "size_mb": 2500 },
+        { "name": "us-west", "url": "https://download.geofabrik.de/north-america/us-west-latest.osm.pbf", "size_mb": 1800 }
+      ]
+    },
+    {
+      "continent": "south-america",
+      "regions": [
+        { "name": "south-america", "url": "https://download.geofabrik.de/south-america-latest.osm.pbf", "size_mb": 3000 }
+      ]
+    }
+  ]
+}

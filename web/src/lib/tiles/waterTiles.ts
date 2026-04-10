@@ -1,0 +1,238 @@
+/**
+ * Water Tile Loader
+ *
+ * Fetches pre-computed water tiles from R2 CDN with multi-LOD support.
+ * Water tiles contain ocean/coastline data from OSM.
+ * Land is computed at runtime as (bbox - water).
+ */
+
+import { BBox } from '@/types';
+import { projectPoint } from '../geo/project';
+import { GeoJSONFeature, GeoJSONFeatureCollection } from './tileLoader';
+
+// R2 CDN URL for water tiles
+const WATER_TILES_CDN = process.env.NEXT_PUBLIC_WATER_TILES_CDN ||
+  'https://cdn.clipmap.io';
+
+// LOD levels for water tiles
+// Note: Only 2.5deg water tiles are on CDN currently
+// Other LODs return empty (no water in those tiles = full land)
+const WATER_LODS = [
+  { folder: 'water-tiles-2.5deg', tileSize: 2.5, maxSpan: Infinity },
+];
+
+// In-memory tile cache
+const waterTileCache = new Map<string, MultiPolygonMercator>();
+const CACHE_MAX_SIZE = 200;
+
+// Pending fetches to prevent duplicate requests
+const pendingFetches = new Map<string, Promise<MultiPolygonMercator | null>>();
+
+// Types
+type Ring = [number, number][];
+type Polygon = Ring[];
+type MultiPolygonMercator = Polygon[];
+
+interface GeoJSONGeometry {
+  type: 'Polygon' | 'MultiPolygon';
+  coordinates: number[][][] | number[][][][];
+}
+
+/**
+ * Compute normalized bbox span (accounts for latitude distortion)
+ */
+function computeNormalizedSpan(bbox: BBox): number {
+  const latSpan = Math.abs(bbox.maxLat - bbox.minLat);
+  const lonSpan = Math.abs(bbox.maxLon - bbox.minLon);
+  const latMid = (bbox.maxLat + bbox.minLat) / 2;
+  const latMidRad = (latMid * Math.PI) / 180;
+  return Math.max(latSpan, Math.abs(lonSpan * Math.cos(latMidRad)));
+}
+
+/**
+ * Select appropriate tile size based on bbox span
+ */
+function selectTileSize(bboxSpan: number): number {
+  for (const lod of WATER_LODS) {
+    if (bboxSpan <= lod.maxSpan) {
+      return lod.tileSize;
+    }
+  }
+  return 20; // Default to coarsest
+}
+
+/**
+ * Get tile start coordinate (snap to tile grid)
+ */
+function tileStart(value: number, tileSize: number): number {
+  return Math.floor(value / tileSize) * tileSize;
+}
+
+/**
+ * Format coordinate for tile filename
+ * For 2.5deg tiles: uses decimal format like "12.5" or "12" for integers
+ * For other tiles: uses integer format
+ */
+function formatCoord(val: number, tileSize: number): string {
+  if (tileSize === 2.5) {
+    // Round to nearest 0.5
+    const rounded = Math.round(val * 2) / 2;
+    // Use decimal format: -15 or 57.5
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  }
+  return String(Math.floor(val));
+}
+
+/**
+ * Get tile IDs for a bounding box
+ */
+function getTileIds(bbox: BBox, tileSize: number): string[] {
+  const { minLat, minLon, maxLat, maxLon } = bbox;
+
+  const startLon = tileStart(minLon, tileSize);
+  const endLon = tileStart(maxLon - 1e-9, tileSize);
+  const startLat = tileStart(minLat, tileSize);
+  const endLat = tileStart(maxLat - 1e-9, tileSize);
+
+  const ids: string[] = [];
+  for (let lat = startLat; lat <= endLat; lat += tileSize) {
+    for (let lon = startLon; lon <= endLon; lon += tileSize) {
+      const lonStr = formatCoord(lon, tileSize);
+      const latStr = formatCoord(lat, tileSize);
+      ids.push(`${lonStr}_${latStr}`);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Parse GeoJSON and convert to Web Mercator coordinates
+ */
+function parseGeoJSONToMercator(data: GeoJSONFeatureCollection): MultiPolygonMercator {
+  const mp: MultiPolygonMercator = [];
+
+  for (const feat of data.features) {
+    if (!feat.geometry) continue;
+    const geom = feat.geometry as GeoJSONGeometry;
+
+    if (geom.type === 'Polygon') {
+      const coords = geom.coordinates as number[][][];
+      const poly: Polygon = coords.map((ring) =>
+        ring.map(([lon, lat]) => projectPoint(lon, lat))
+      );
+      mp.push(poly);
+    } else if (geom.type === 'MultiPolygon') {
+      const coords = geom.coordinates as number[][][][];
+      for (const polyCoords of coords) {
+        const poly: Polygon = polyCoords.map((ring) =>
+          ring.map(([lon, lat]) => projectPoint(lon, lat))
+        );
+        mp.push(poly);
+      }
+    }
+  }
+
+  return mp;
+}
+
+/**
+ * Fetch a single water tile from R2
+ */
+async function fetchWaterTile(url: string): Promise<MultiPolygonMercator | null> {
+  // Check cache
+  if (waterTileCache.has(url)) {
+    return waterTileCache.get(url)!;
+  }
+
+  // Check pending
+  if (pendingFetches.has(url)) {
+    return pendingFetches.get(url)!;
+  }
+
+  const fetchPromise = (async (): Promise<MultiPolygonMercator | null> => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        if (response.status === 404) {
+          // Tile doesn't exist (empty ocean/land area)
+          return null;
+        }
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json() as GeoJSONFeatureCollection;
+      const mp = parseGeoJSONToMercator(data);
+
+      // Cache the result
+      if (waterTileCache.size >= CACHE_MAX_SIZE) {
+        // Remove oldest entry
+        const firstKey = waterTileCache.keys().next().value;
+        if (firstKey) waterTileCache.delete(firstKey);
+      }
+      waterTileCache.set(url, mp);
+
+      return mp.length ? mp : null;
+    } catch (err) {
+      console.warn('Water tile fetch error:', url, err);
+      return null;
+    } finally {
+      pendingFetches.delete(url);
+    }
+  })();
+
+  pendingFetches.set(url, fetchPromise);
+  return fetchPromise;
+}
+
+/**
+ * Load water features for a bounding box from R2.
+ * Returns MultiPolygon in Web Mercator coordinates.
+ */
+export async function loadWaterTiles(bbox: BBox): Promise<MultiPolygonMercator> {
+  const bboxSpan = computeNormalizedSpan(bbox);
+  const tileSize = selectTileSize(bboxSpan);
+
+  // Find matching LOD
+  const lod = WATER_LODS.find(l => l.tileSize === tileSize);
+  if (!lod) {
+    console.error('Invalid tile size:', tileSize);
+    return [];
+  }
+
+  const tileIds = getTileIds(bbox, tileSize);
+
+  console.log(`Loading water tiles: ${tileIds.length} tiles @ ${lod.folder} (span: ${bboxSpan.toFixed(1)}°)`);
+
+  // Fetch all tiles in parallel
+  const tileUrls = tileIds.map(id => `${WATER_TILES_CDN}/${lod.folder}/${id}.geojson`);
+  const tileResults = await Promise.all(tileUrls.map(url => fetchWaterTile(url)));
+
+  // Combine all polygons
+  const allPolygons: MultiPolygonMercator = [];
+  for (const tileData of tileResults) {
+    if (tileData) {
+      allPolygons.push(...tileData);
+    }
+  }
+
+  console.log(`Water tiles loaded: ${allPolygons.length} polygons`);
+  return allPolygons;
+}
+
+/**
+ * Clear water tile cache
+ */
+export function clearWaterTileCache(): void {
+  waterTileCache.clear();
+  pendingFetches.clear();
+}
+
+/**
+ * Get water tile cache stats
+ */
+export function getWaterCacheStats(): { size: number; maxSize: number } {
+  return {
+    size: waterTileCache.size,
+    maxSize: CACHE_MAX_SIZE,
+  };
+}

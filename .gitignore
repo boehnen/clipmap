@@ -31,10 +31,7 @@ build/
 out/
 tmp/
 temp/
-
-# Vite build output
-frontend/dist/
-backend/dist/
+.next/
 
 # -----------------------------------------------------
 # LOGS / RUNTIME ARTIFACTS
@@ -77,35 +74,6 @@ coverage/
 .cache/
 .eslintcache
 stylelintcache/
-.parcel-cache/
-.rollup.cache/
-vite-cache/
-vite.config.timestamp-*
-.vite/
-
-# -----------------------------------------------------
-# FRONTEND SPECIFIC (React + Vite)
-# -----------------------------------------------------
-frontend/node_modules/
-frontend/.vite/
-frontend/.eslintcache
-frontend/.cache/
-
-# -----------------------------------------------------
-# BACKEND SPECIFIC (Express + TS)
-# -----------------------------------------------------
-backend/node_modules/
-backend/.cache/
-backend/*.local
-backend/*.log
-
-# TS compiled output (if compiled to /build or /dist)
-backend/build/
-backend/dist/
-
-# Tile data (served from R2/CDN, not bundled in repo)
-backend/src/data/base/land-tiles/
-backend/src/data/base/water-tiles/
 
 # -----------------------------------------------------
 # OS TEMP FILES
