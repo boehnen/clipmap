@@ -23,7 +23,7 @@ const AVAILABLE_LAYERS: { name: LayerName; label: string; type: 'fill' | 'stroke
 ];
 
 const DEFAULT_STYLES: Record<LayerName, LayerStyle> = {
-  land: { visible: true, stroke: 'none', fill: '#f5f5f5', strokeWidth: 1, opacity: 1 },
+  land: { visible: true, stroke: 'none', fill: '#a2c3b0', strokeWidth: 1, opacity: 1 },
   water: { visible: true, stroke: 'none', fill: '#b3d9ff', strokeWidth: 1, opacity: 1 },
   parks: { visible: false, stroke: 'none', fill: '#c8e6c9', strokeWidth: 1, opacity: 1 },
   roads: { visible: false, stroke: '#333333', fill: 'none', strokeWidth: 1, opacity: 1 },
