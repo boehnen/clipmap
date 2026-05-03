@@ -5,8 +5,10 @@ import { MapContainer as LeafletMapContainer, TileLayer, Rectangle, Marker, useM
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { BBox, LayerName } from '@/types';
-import { LayerStyle, OutputMode } from '@/types/makerPresets';
+import { LayerStyle, OutputMode, GradientFill } from '@/types/makerPresets';
 import { SvgPreview } from './SvgPreview';
+import { GradientHandles } from './GradientHandles';
+import { FlyToTarget } from '@/types/ui';
 
 // Handle icons
 const handleIcon = L.divIcon({
@@ -35,6 +37,13 @@ interface MapContainerProps {
   layerStyles?: Record<LayerName, LayerStyle>;
   outputMode?: OutputMode;
   previewOpacity?: number;
+  // Fly to target (from presets/commands)
+  flyToTarget?: FlyToTarget | null;
+  // Callbacks for external controls
+  onFitToViewRef?: React.MutableRefObject<(() => void) | null>;
+  onCopyBboxRef?: React.MutableRefObject<(() => void) | null>;
+  // Gradient changes
+  onGradientChange?: (layerName: LayerName, gradient: GradientFill) => void;
 }
 
 type HandleId = 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'w' | 'e' | 'center';
@@ -361,7 +370,8 @@ function MapControls({
         [pastedBbox.maxLat, pastedBbox.maxLon]
       );
 
-      map.fitBounds(newBounds, { maxZoom: 16, padding: [20, 20] });
+      // Use flyToBounds for smooth animation
+      map.flyToBounds(newBounds, { maxZoom: 16, padding: [80, 80] });
       setBounds(newBounds);
       onPaste?.(pastedBbox);
 
@@ -379,7 +389,7 @@ function MapControls({
   const btnError = "bg-red-50 text-red-700 border-red-300";
 
   return (
-    <div className="absolute bottom-4 left-4 z-[1000] flex gap-2">
+    <div className="hidden md:flex absolute bottom-4 left-4 z-[1000] gap-2">
       <button onClick={handleFitToView} className={`${btnBase} ${btnNormal}`}>
         Fit to View
       </button>
@@ -436,6 +446,92 @@ function ExternalBoundsHandler({
   return null;
 }
 
+// Handle flyTo from presets/commands
+function FlyToHandler({
+  flyToTarget,
+  setBounds,
+}: {
+  flyToTarget?: FlyToTarget | null;
+  setBounds: (b: L.LatLngBounds) => void;
+}) {
+  const map = useMap();
+  const lastTargetRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!flyToTarget) return;
+
+    const key = JSON.stringify(flyToTarget);
+    if (key === lastTargetRef.current) return;
+    lastTargetRef.current = key;
+
+    // If bbox provided, use it to set selection bounds directly
+    if (flyToTarget.bbox) {
+      const selectionBounds = L.latLngBounds(
+        [flyToTarget.bbox.minLat, flyToTarget.bbox.minLon],
+        [flyToTarget.bbox.maxLat, flyToTarget.bbox.maxLon]
+      );
+
+      // Fly to the bbox with some padding around it for context
+      map.flyToBounds(selectionBounds, { maxZoom: flyToTarget.zoom, padding: [80, 80] });
+
+      // Set the selection rectangle to match the preset bbox exactly
+      setBounds(selectionBounds);
+    } else {
+      map.flyTo(flyToTarget.center, flyToTarget.zoom);
+    }
+  }, [flyToTarget, map, setBounds]);
+
+  return null;
+}
+
+// Expose fit-to-view and copy functions via refs
+function MapRefHandler({
+  bounds,
+  setBounds,
+  onFitToViewRef,
+  onCopyBboxRef,
+}: {
+  bounds: L.LatLngBounds | null;
+  setBounds: (b: L.LatLngBounds) => void;
+  onFitToViewRef?: React.MutableRefObject<(() => void) | null>;
+  onCopyBboxRef?: React.MutableRefObject<(() => void) | null>;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (onFitToViewRef) {
+      onFitToViewRef.current = () => {
+        const viewBounds = map.getBounds();
+        const sw = viewBounds.getSouthWest();
+        const ne = viewBounds.getNorthEast();
+        const padLat = (ne.lat - sw.lat) * 0.2;
+        const padLon = (ne.lng - sw.lng) * 0.2;
+
+        const rectBounds = L.latLngBounds(
+          [sw.lat + padLat, sw.lng + padLon],
+          [ne.lat - padLat, ne.lng - padLon]
+        );
+        setBounds(rectBounds);
+      };
+    }
+
+    if (onCopyBboxRef) {
+      onCopyBboxRef.current = async () => {
+        if (!bounds) return;
+        const bbox = {
+          minLat: bounds.getSouth(),
+          minLon: bounds.getWest(),
+          maxLat: bounds.getNorth(),
+          maxLon: bounds.getEast(),
+        };
+        await navigator.clipboard.writeText(JSON.stringify(bbox));
+      };
+    }
+  }, [map, bounds, setBounds, onFitToViewRef, onCopyBboxRef]);
+
+  return null;
+}
+
 export function MapContainer({
   initialCenter = [40.7128, -74.006],
   initialZoom = 12,
@@ -447,6 +543,10 @@ export function MapContainer({
   layerStyles,
   outputMode = 'combined',
   previewOpacity = 0.9,
+  flyToTarget,
+  onFitToViewRef,
+  onCopyBboxRef,
+  onGradientChange,
 }: MapContainerProps) {
   const [bounds, setBounds] = useState<L.LatLngBounds | null>(null);
   const [currentBbox, setCurrentBbox] = useState<BBox | null>(null);
@@ -487,14 +587,30 @@ export function MapContainer({
           onDragEnd={() => setIsDragging(false)}
         />
         <ExternalBoundsHandler externalBounds={externalBounds} setBounds={setBounds} />
+        <FlyToHandler flyToTarget={flyToTarget} setBounds={setBounds} />
+        <MapRefHandler
+          bounds={bounds}
+          setBounds={setBounds}
+          onFitToViewRef={onFitToViewRef}
+          onCopyBboxRef={onCopyBboxRef}
+        />
         <SearchControl onSearch={() => {}} />
         <MapControls bounds={bounds} setBounds={setBounds} onPaste={onPaste} />
         {layerStyles && (
-          <SvgPreview
-            bbox={currentBbox}
-            layerStyles={layerStyles}
-            enabled={showPreview && !isDragging}
-          />
+          <>
+            <SvgPreview
+              bbox={currentBbox}
+              layerStyles={layerStyles}
+              enabled={showPreview && !isDragging}
+            />
+            {onGradientChange && (
+              <GradientHandles
+                bbox={currentBbox}
+                layerStyles={layerStyles}
+                onGradientChange={onGradientChange}
+              />
+            )}
+          </>
         )}
       </LeafletMapContainer>
     </div>

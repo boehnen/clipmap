@@ -4,8 +4,39 @@
 
 import { GeoJSONFeature, GeoJSONFeatureCollection } from '../tiles/tileLoader';
 import { projectPoint, toSvgCoords, getViewportDimensions } from '../geo/project';
-import { LayerStyle, OutputMode } from '@/types/makerPresets';
+import { LayerStyle, OutputMode, GradientFill, LinearGradient, RadialGradient } from '@/types/makerPresets';
 import { BBox } from '@/types';
+
+/**
+ * Generate SVG gradient definition
+ */
+function generateGradientDef(id: string, gradient: GradientFill): string {
+  if (gradient.type === 'linear') {
+    const lg = gradient as LinearGradient;
+    // Convert angle to SVG coordinates (0deg = left-to-right, 90deg = top-to-bottom)
+    const angleRad = (lg.angle - 90) * (Math.PI / 180);
+    const x1 = 50 - Math.cos(angleRad) * 50;
+    const y1 = 50 - Math.sin(angleRad) * 50;
+    const x2 = 50 + Math.cos(angleRad) * 50;
+    const y2 = 50 + Math.sin(angleRad) * 50;
+
+    const stops = lg.stops.map(s =>
+      `<stop offset="${s.offset}%" stop-color="${s.color}"/>`
+    ).join('');
+
+    return `<linearGradient id="${id}" x1="${x1.toFixed(1)}%" y1="${y1.toFixed(1)}%" x2="${x2.toFixed(1)}%" y2="${y2.toFixed(1)}%">${stops}</linearGradient>`;
+  } else {
+    const rg = gradient as RadialGradient;
+    const cx = rg.cx ?? 50;
+    const cy = rg.cy ?? 50;
+
+    const stops = rg.stops.map(s =>
+      `<stop offset="${s.offset}%" stop-color="${s.color}"/>`
+    ).join('');
+
+    return `<radialGradient id="${id}" cx="${cx}%" cy="${cy}%" r="50%">${stops}</radialGradient>`;
+  }
+}
 
 interface Viewport {
   minX: number;
@@ -76,13 +107,23 @@ function coordsToPathData(
  */
 function getEffectiveStyle(
   style: LayerStyle,
-  outputMode: OutputMode
-): { stroke: string; fill: string; strokeWidth: number; opacity: number } {
+  outputMode: OutputMode,
+  layerName: string
+): { stroke: string; fill: string; strokeWidth: number; opacity: number; gradientDef?: string } {
   let stroke = style.stroke;
   let fill = style.fill;
+  let gradientDef: string | undefined;
+
+  // Check for gradient fill
+  if (style.fillGradient && outputMode !== 'stroke-only') {
+    const gradientId = `${layerName}-gradient`;
+    gradientDef = generateGradientDef(gradientId, style.fillGradient);
+    fill = `url(#${gradientId})`;
+  }
 
   if (outputMode === 'stroke-only') {
     fill = 'none';
+    gradientDef = undefined;
   } else if (outputMode === 'filled') {
     stroke = 'none';
   }
@@ -92,6 +133,7 @@ function getEffectiveStyle(
     fill,
     strokeWidth: style.strokeWidth,
     opacity: style.opacity,
+    gradientDef,
   };
 }
 
@@ -154,14 +196,15 @@ export function renderLayerToSvg(
   bbox: BBox,
   style: LayerStyle,
   outputMode: OutputMode,
-  targetWidth: number = 800
+  targetWidth: number = 800,
+  layerName: string = 'layer'
 ): string {
   if (!style.visible || featureCollection.features.length === 0) {
     return '';
   }
 
   const viewport = createSvgViewport(bbox, targetWidth);
-  const effectiveStyle = getEffectiveStyle(style, outputMode);
+  const effectiveStyle = getEffectiveStyle(style, outputMode, layerName);
 
   // Skip if nothing to draw
   if (effectiveStyle.stroke === 'none' && effectiveStyle.fill === 'none') {
@@ -198,13 +241,18 @@ export function renderLayerToSvg(
     styleAttrs.push(`opacity="${effectiveStyle.opacity}"`);
   }
 
+  // Build defs section if gradient is present
+  const defsSection = effectiveStyle.gradientDef
+    ? `<defs>${effectiveStyle.gradientDef}</defs>\n  `
+    : '';
+
   // Build complete SVG
   const svgContent = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
      viewBox="0 0 ${viewport.width.toFixed(2)} ${viewport.height.toFixed(2)}"
      width="${viewport.width.toFixed(2)}"
      height="${viewport.height.toFixed(2)}">
-  <g ${styleAttrs.join(' ')}>
+  ${defsSection}<g ${styleAttrs.join(' ')}>
     ${paths.join('\n    ')}
   </g>
 </svg>`;
@@ -228,7 +276,7 @@ export function renderAllLayersToSvg(
     const style = styles[layerName];
     if (!style || !style.visible) return;
 
-    const svg = renderLayerToSvg(fc, bbox, style, outputMode, targetWidth);
+    const svg = renderLayerToSvg(fc, bbox, style, outputMode, targetWidth, layerName);
     if (svg) {
       result.set(layerName, svg);
     }

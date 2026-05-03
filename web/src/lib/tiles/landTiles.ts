@@ -212,6 +212,7 @@ export async function loadLandTiles(bbox: BBox): Promise<MultiPolygonMercator> {
 
   const tileIds = getTileIds(bbox, tileSize);
 
+  console.log(`[Land] Loading ${tileIds.length} tiles @ ${lod.folder} (span: ${bboxSpan.toFixed(3)}°, tiles: ${tileIds.join(', ')})`);
 
   // Fetch all tiles in parallel (direct paths to /land-tiles-{lod}/)
   const tileUrls = tileIds.map(id => `${TILES_CDN}/${lod.folder}/${id}.geojson`);

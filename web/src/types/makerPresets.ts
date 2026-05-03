@@ -17,10 +17,32 @@ export interface LayerFilter {
   exclude?: string[];         // Hide these values
 }
 
+// Gradient definitions for fills
+export interface GradientStop {
+  offset: number;  // 0-100
+  color: string;
+}
+
+export interface LinearGradient {
+  type: 'linear';
+  angle: number;  // degrees, 0 = left-to-right, 90 = top-to-bottom
+  stops: GradientStop[];
+}
+
+export interface RadialGradient {
+  type: 'radial';
+  cx?: number;  // center x (0-100), default 50
+  cy?: number;  // center y (0-100), default 50
+  stops: GradientStop[];
+}
+
+export type GradientFill = LinearGradient | RadialGradient;
+
 export interface LayerStyle {
   visible: boolean;
   stroke: string;        // color or 'none'
-  fill: string;          // color or 'none'
+  fill: string;          // color or 'none' (solid fill)
+  fillGradient?: GradientFill;  // optional gradient fill (overrides fill if present)
   strokeWidth: number;   // multiplier (1.0 = default)
   opacity: number;
   dashArray?: string;

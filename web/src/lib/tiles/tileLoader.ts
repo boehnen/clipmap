@@ -31,7 +31,7 @@ const tileCache = new Map<string, GeoJSONFeatureCollection>();
 const pendingFetches = new Map<string, Promise<GeoJSONFeatureCollection>>();
 
 // CDN base URL - configurable via env
-const TILE_CDN_URL = process.env.NEXT_PUBLIC_TILE_CDN_URL || '/tiles';
+const TILE_CDN_URL = process.env.NEXT_PUBLIC_TILE_CDN_URL || 'https://cdn.clipmap.io';
 
 /**
  * Get tile key for caching

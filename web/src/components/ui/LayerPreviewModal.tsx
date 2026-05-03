@@ -55,11 +55,6 @@ export function LayerPreviewModal({
   const [isDownloading, setIsDownloading] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
 
-  // Debug logging
-  useEffect(() => {
-    console.log('[Preview] Layers:', layers.map(l => l.name));
-  }, [layers]);
-
   // Initialize local styles from passed layerStyles or defaults
   useEffect(() => {
     const updates: Record<string, { visible: boolean; stroke: string; fill: string; strokeWidth: number }> = {};
@@ -238,6 +233,27 @@ export function LayerPreviewModal({
   const canvasWidth = layers[0]?.width || 800;
   const canvasHeight = layers[0]?.height || 600;
 
+  // Calculate preview dimensions to fit within constraints while maintaining aspect ratio
+  const maxW = 500; // max preview width in pixels
+  const maxH = 400; // max preview height in pixels
+  const aspectRatio = canvasWidth / canvasHeight;
+
+  let previewWidth: number;
+  let previewHeight: number;
+
+  if (aspectRatio > maxW / maxH) {
+    // Wide image - constrain by width
+    previewWidth = maxW;
+    previewHeight = maxW / aspectRatio;
+  } else {
+    // Tall image - constrain by height
+    previewHeight = maxH;
+    previewWidth = maxH * aspectRatio;
+  }
+
+  console.log('[preview] canvas:', canvasWidth, 'x', canvasHeight, '| preview:', previewWidth.toFixed(0), 'x', previewHeight.toFixed(0));
+
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-black/70"
@@ -317,10 +333,18 @@ export function LayerPreviewModal({
                     transition: isPanning ? 'none' : 'transform 0.05s ease-out',
                   }}
                 >
-                  <div className="rounded shadow-lg" style={{ background: '#fff' }}>
+                  <div
+                    className="rounded shadow-lg"
+                    style={{
+                      background: '#fff',
+                      width: previewWidth,
+                      height: previewHeight,
+                    }}
+                  >
                     <svg
                       viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
-                      style={{ width: 'auto', height: '45vh', maxWidth: '50vw', display: 'block' }}
+                      width={previewWidth}
+                      height={previewHeight}
                       xmlns="http://www.w3.org/2000/svg"
                     >
                       {sortedLayers.map((layer) => {

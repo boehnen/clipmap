@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { BBox, LayerName } from '@/types';
-import { LayerStyle } from '@/types/makerPresets';
+import { LayerStyle, GradientFill, LinearGradient, RadialGradient } from '@/types/makerPresets';
 import { loadWaterTiles } from '@/lib/tiles/waterTiles';
 import { loadLandTiles } from '@/lib/tiles/landTiles';
 import { loadRoads, loadBoundaries } from '@/lib/overpass';
@@ -41,6 +41,44 @@ function multiPolygonToPathData(
     }
   }
   return parts.join('');
+}
+
+// Generate SVG gradient definition with absolute coordinates (userSpaceOnUse)
+function generateGradientDef(
+  id: string,
+  gradient: GradientFill,
+  viewBox: { width: number; height: number }
+): string {
+  if (gradient.type === 'linear') {
+    const lg = gradient as LinearGradient;
+    // Convert angle to SVG coordinates (0deg = left-to-right, 90deg = top-to-bottom)
+    const angleRad = (lg.angle - 90) * (Math.PI / 180);
+    // Use absolute coordinates based on viewBox
+    const cx = viewBox.width / 2;
+    const cy = viewBox.height / 2;
+    const radius = Math.max(viewBox.width, viewBox.height) / 2;
+    const x1 = cx - Math.cos(angleRad) * radius;
+    const y1 = cy - Math.sin(angleRad) * radius;
+    const x2 = cx + Math.cos(angleRad) * radius;
+    const y2 = cy + Math.sin(angleRad) * radius;
+
+    const stops = lg.stops.map(s =>
+      `<stop offset="${s.offset}%" stop-color="${s.color}"/>`
+    ).join('');
+
+    return `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}">${stops}</linearGradient>`;
+  } else {
+    const rg = gradient as RadialGradient;
+    const cx = (rg.cx ?? 50) / 100 * viewBox.width;
+    const cy = (rg.cy ?? 50) / 100 * viewBox.height;
+    const r = Math.max(viewBox.width, viewBox.height) / 2;
+
+    const stops = rg.stops.map(s =>
+      `<stop offset="${s.offset}%" stop-color="${s.color}"/>`
+    ).join('');
+
+    return `<radialGradient id="${id}" gradientUnits="userSpaceOnUse" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}">${stops}</radialGradient>`;
+  }
 }
 
 // Line path data generation for roads/boundaries
@@ -238,12 +276,37 @@ export function SvgPreview({
     const vbWidth = 1000;
     const vbHeight = projHeight * scale;
 
-    const landFill = layerStyles.land?.visible ? layerStyles.land.fill : 'none';
-    const waterFill = layerStyles.water?.visible ? layerStyles.water.fill : 'none';
+    // Generate gradient definitions if needed
+    const gradientDefs: string[] = [];
+    let landFill = 'none';
+    let waterFill = 'none';
+    const viewBox = { width: vbWidth, height: vbHeight };
+
+    if (layerStyles.land?.visible) {
+      if (layerStyles.land.fillGradient) {
+        gradientDefs.push(generateGradientDef('preview-land-gradient', layerStyles.land.fillGradient, viewBox));
+        landFill = 'url(#preview-land-gradient)';
+      } else {
+        landFill = layerStyles.land.fill;
+      }
+    }
+
+    if (layerStyles.water?.visible) {
+      if (layerStyles.water.fillGradient) {
+        gradientDefs.push(generateGradientDef('preview-water-gradient', layerStyles.water.fillGradient, viewBox));
+        waterFill = 'url(#preview-water-gradient)';
+      } else {
+        waterFill = layerStyles.water.fill;
+      }
+    }
+
     const roadsStroke = layerStyles.roads?.visible ? layerStyles.roads.stroke : 'none';
     const boundariesStroke = layerStyles.boundaries?.visible ? layerStyles.boundaries.stroke : 'none';
 
+    const defsSection = gradientDefs.length > 0 ? `<defs>${gradientDefs.join('')}</defs>` : '';
+
     container.innerHTML = `<svg viewBox="0 0 ${vbWidth} ${vbHeight}" width="100%" height="100%" preserveAspectRatio="none" style="display:block">
+      ${defsSection}
       ${pathData.land ? `<path d="${pathData.land}" fill="${landFill}" fill-rule="evenodd"/>` : ''}
       ${pathData.water ? `<path d="${pathData.water}" fill="${waterFill}" fill-rule="evenodd"/>` : ''}
       ${pathData.roads ? `<path d="${pathData.roads}" fill="none" stroke="${roadsStroke}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>` : ''}

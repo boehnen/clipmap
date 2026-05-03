@@ -4,6 +4,10 @@ import '@/styles/globals.css';
 export const metadata: Metadata = {
   title: 'ClipMap - Custom Maps for Makers',
   description: 'Generate SVG maps for laser cutting, CNC, and wall art. Select any location, choose layers, download instantly.',
+  icons: {
+    icon: '/icon.svg',
+    apple: '/apple-icon.svg',
+  },
 };
 
 export default function RootLayout({

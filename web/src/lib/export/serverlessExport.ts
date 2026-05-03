@@ -10,7 +10,7 @@
  */
 
 import { BBox, LayerName } from '@/types';
-import { LayerStyle, OutputMode } from '@/types/makerPresets';
+import { LayerStyle, OutputMode, GradientFill, LinearGradient, RadialGradient } from '@/types/makerPresets';
 import { loadWaterTiles } from '../tiles/waterTiles';
 import { loadLandTiles } from '../tiles/landTiles';
 import { loadRoads, loadBoundaries } from '../overpass';
@@ -111,6 +111,46 @@ function multiLineStringToPathData(
 }
 
 /**
+ * Generate SVG gradient definition with absolute coordinates (userSpaceOnUse)
+ */
+function generateGradientDef(
+  id: string,
+  gradient: GradientFill,
+  viewBox: { width: number; height: number }
+): string {
+  if (gradient.type === 'linear') {
+    const lg = gradient as LinearGradient;
+    // Convert angle to SVG coordinates (0deg = left-to-right, 90deg = top-to-bottom)
+    const angleRad = (lg.angle - 90) * (Math.PI / 180);
+    // Use absolute coordinates based on viewBox
+    const cx = viewBox.width / 2;
+    const cy = viewBox.height / 2;
+    const radius = Math.max(viewBox.width, viewBox.height) / 2;
+    const x1 = cx - Math.cos(angleRad) * radius;
+    const y1 = cy - Math.sin(angleRad) * radius;
+    const x2 = cx + Math.cos(angleRad) * radius;
+    const y2 = cy + Math.sin(angleRad) * radius;
+
+    const stops = lg.stops.map(s =>
+      `<stop offset="${s.offset}%" stop-color="${s.color}"/>`
+    ).join('');
+
+    return `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}">${stops}</linearGradient>`;
+  } else {
+    const rg = gradient as RadialGradient;
+    const cx = (rg.cx ?? 50) / 100 * viewBox.width;
+    const cy = (rg.cy ?? 50) / 100 * viewBox.height;
+    const r = Math.max(viewBox.width, viewBox.height) / 2;
+
+    const stops = rg.stops.map(s =>
+      `<stop offset="${s.offset}%" stop-color="${s.color}"/>`
+    ).join('');
+
+    return `<radialGradient id="${id}" gradientUnits="userSpaceOnUse" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}">${stops}</radialGradient>`;
+  }
+}
+
+/**
  * Render a line layer to SVG
  */
 function renderLineLayerSvg(
@@ -156,11 +196,19 @@ function renderLayerSvg(
   // Apply output mode
   let fill = style.fill;
   let stroke = style.stroke;
+  let gradientDef = '';
 
   if (outputMode === 'stroke-only') {
     fill = 'none';
   } else if (outputMode === 'filled') {
     stroke = 'none';
+  }
+
+  // Check for gradient fill (only when not stroke-only mode)
+  if (style.fillGradient && outputMode !== 'stroke-only') {
+    const gradientId = `${layerId}-gradient`;
+    gradientDef = generateGradientDef(gradientId, style.fillGradient, { width, height });
+    fill = `url(#${gradientId})`;
   }
 
   // Build style attributes
@@ -182,11 +230,14 @@ function renderLayerSvg(
     styleAttrs.push(`opacity="${style.opacity}"`);
   }
 
+  // Build defs section if gradient present
+  const defsSection = gradientDef ? `\n  <defs>\n    ${gradientDef}\n  </defs>` : '';
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
      viewBox="0 0 ${width.toFixed(2)} ${height.toFixed(2)}"
      width="${width.toFixed(2)}"
-     height="${height.toFixed(2)}">
+     height="${height.toFixed(2)}">${defsSection}
   <g id="${layerId}" ${styleAttrs.join(' ')}>
     <path d="${pathData}"/>
   </g>
@@ -403,4 +454,117 @@ export async function exportAndDownload(
   const zip = await createExportZip(layers);
   const timestamp = new Date().toISOString().slice(0, 10);
   downloadBlob(zip, `map-export-${timestamp}.zip`);
+}
+
+/**
+ * Create a combined/flattened SVG from all layers
+ */
+export function createCombinedSvg(layers: ExportedLayer[]): string {
+  if (layers.length === 0) return '';
+
+  const { width, height } = layers[0];
+
+  // Collect all gradient definitions
+  const gradientDefs: string[] = [];
+  const layerGroups: string[] = [];
+
+  for (const layer of layers) {
+    // Extract defs section if present
+    const defsMatch = layer.svg.match(/<defs>([\s\S]*?)<\/defs>/);
+    if (defsMatch) {
+      gradientDefs.push(defsMatch[1]);
+    }
+
+    // Extract the g element content
+    const gMatch = layer.svg.match(/<g[^>]*>([\s\S]*?)<\/g>/);
+    if (gMatch) {
+      // Get the full g tag with attributes
+      const fullGMatch = layer.svg.match(/<g[^>]*>[\s\S]*?<\/g>/);
+      if (fullGMatch) {
+        layerGroups.push(fullGMatch[0]);
+      }
+    }
+  }
+
+  const defsSection = gradientDefs.length > 0
+    ? `\n  <defs>\n    ${gradientDefs.join('\n    ')}\n  </defs>`
+    : '';
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 ${width.toFixed(2)} ${height.toFixed(2)}"
+     width="${width.toFixed(2)}"
+     height="${height.toFixed(2)}">${defsSection}
+  ${layerGroups.join('\n  ')}
+</svg>`;
+}
+
+/**
+ * Render SVG to PNG blob
+ */
+export async function svgToPng(
+  svgString: string,
+  width: number,
+  height: number,
+  scale: number = 2 // Default 2x for retina
+): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      reject(new Error('Could not get canvas context'));
+      return;
+    }
+
+    // Scale canvas for higher resolution
+    canvas.width = width * scale;
+    canvas.height = height * scale;
+    ctx.scale(scale, scale);
+
+    const img = new Image();
+    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(url);
+
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error('Failed to create PNG blob'));
+        }
+      }, 'image/png');
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Failed to load SVG for PNG conversion'));
+    };
+
+    img.src = url;
+  });
+}
+
+/**
+ * Export as flattened PNG
+ */
+export async function exportAsPng(
+  options: ExportOptions & { scale?: number },
+  callbacks: ExportCallbacks = {}
+): Promise<void> {
+  const layers = await exportServerless(options, callbacks);
+
+  if (layers.length === 0) {
+    throw new Error('No layers to export');
+  }
+
+  const combinedSvg = createCombinedSvg(layers);
+  const { width, height } = layers[0];
+  const scale = options.scale || 2;
+
+  const pngBlob = await svgToPng(combinedSvg, width, height, scale);
+  const timestamp = new Date().toISOString().slice(0, 10);
+  downloadBlob(pngBlob, `map-export-${timestamp}.png`);
 }

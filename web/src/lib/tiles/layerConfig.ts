@@ -57,15 +57,20 @@ export const LAYER_CONFIGS: LayerLODConfig[] = [
     ],
   },
 
-  // Roads: Dense network needs class filtering at coarse LODs
+  // Roads: Hybrid Natural Earth + OSM
+  // - World/20deg: Natural Earth 10m data (sparse, major highways only)
+  // - 10deg/5deg/1deg: OSM data (dense, all road classes) - TODO
+  // NOTE: NE data shifted up one LOD level to match visual density
   {
     name: 'roads',
     geometryType: 'LineString',
+    worldFile: 'world.json',  // NE 10deg source → world file
     lods: [
-      // No world-scale roads (too dense, not useful)
-      { folder: '10deg', tileSize: 10, maxSpan: 40, filter: 'highway IN (motorway, trunk)' },
-      { folder: '5deg', tileSize: 5, maxSpan: 15, filter: 'highway IN (motorway, trunk, primary)' },
-      { folder: '1deg', tileSize: 1, maxSpan: 3 }, // All roads
+      { folder: '20deg', tileSize: 20, maxSpan: 90 },  // NE 5deg source → 20deg tiles
+      // TODO: OSM-based tiles for detail:
+      // { folder: '10deg', tileSize: 10, maxSpan: 40 },
+      // { folder: '5deg', tileSize: 5, maxSpan: 15 },
+      // { folder: '1deg', tileSize: 1, maxSpan: 3 },
     ],
   },
 

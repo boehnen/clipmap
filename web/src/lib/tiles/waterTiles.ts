@@ -211,6 +211,7 @@ export async function loadWaterTiles(bbox: BBox): Promise<MultiPolygonMercator> 
 
   const tileIds = getTileIds(bbox, tileSize);
 
+  console.log(`[Water] Loading ${tileIds.length} tiles @ ${lod.folder} (span: ${bboxSpan.toFixed(3)}°, tiles: ${tileIds.join(', ')})`);
 
   // Fetch all tiles in parallel
   const tileUrls = tileIds.map(id => `${TILES_CDN}/${lod.folder}/${id}.geojson`);
